@@ -1100,6 +1100,7 @@ async def _send_video(msg, video_path: str, caption: str, clean_url: str):
                               caption=caption[:1024], supports_streaming=True)
     if send_path != video_path and os.path.exists(send_path):
         os.remove(send_path)
+    return True
 
 
 async def _run_whisper(target_path: str) -> str:
