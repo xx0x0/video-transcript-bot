@@ -1088,7 +1088,7 @@ async def _send_video(msg, video_path: str, caption: str, clean_url: str):
             await msg.reply_text(
                 f"⚠️ 视频过大（{file_size:.1f}MB），超过 200MB 不压缩，请到本地手动提取\n📁 {video_path}"
             )
-            return
+            return False
     converted = _ensure_h264(send_path)
     if converted != send_path:
         if send_path != video_path and os.path.exists(send_path):
