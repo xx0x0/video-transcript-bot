@@ -1456,10 +1456,10 @@ async def _process(msg, clean_url: str, mode: str = "default"):
     if len(vid_caption) > 1024:
         vid_caption = vid_caption[:1023] + "…"
 
-    await _send_video(msg, video_path, vid_caption, clean_url)
+    video_sent = await _send_video(msg, video_path, vid_caption, clean_url)
 
     if need_analysis and analysis:
-        if not caption_with_summary:
+        if not caption_with_summary or not video_sent:
             summary_text = title_prefix + f"📝 AI 梳理：\n\n{analysis}{url_suffix}"
             while summary_text:
                 await msg.reply_text(summary_text[:4000])
