@@ -17,8 +17,10 @@ USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.3
               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 MAX_IMAGES = 10
 DEFAULT_TIMEOUT = 15
-# Telegram Bot API 上传上限 50MB，留余量
-TG_MAX_VIDEO_BYTES = 48 * 1024 * 1024
+# 选档上限：默认 Bot API 上传上限 50MB 留余量到 48MB；
+# 配了 TELEGRAM_API_ID/HASH（走 Pyrogram/MTProto 发送）时放宽到 1900MB，可选 720p 原画档
+_PYRO_AVAILABLE = bool(os.environ.get("TELEGRAM_API_ID") and os.environ.get("TELEGRAM_API_HASH"))
+TG_MAX_VIDEO_BYTES = (1900 if _PYRO_AVAILABLE else 48) * 1024 * 1024
 
 
 def _extract_tweet_id(url: str) -> Optional[str]:

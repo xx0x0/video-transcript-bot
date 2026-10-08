@@ -14,6 +14,25 @@ SAVE_DIR = os.path.expanduser("~/Downloads/抖音")
 DOUYIN_MCP = os.path.expanduser("~/douyin-mcp-server")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# ---- Pyrogram（MTProto）大文件发送：Bot API 上传上限 50MB，配了 api_id/hash 走 ----
+# Pyrogram 用同一个 bot_token，上限提到 2GB，>50MB 的视频改用它发，<=50MB 仍走原库
+TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0") or "0")
+TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+PYRO_ENABLED = bool(TELEGRAM_API_ID and TELEGRAM_API_HASH)
+BOT_API_LIMIT_MB = 50          # Bot API 上传硬限
+PYRO_LIMIT_MB = 1900           # MTProto 上限 2GB，留余量
+_pyro = None
+if PYRO_ENABLED:
+    from pyrogram import Client as _PyroClient
+    _pyro = _PyroClient(
+        "douyin_bot_pyro",
+        api_id=TELEGRAM_API_ID,
+        api_hash=TELEGRAM_API_HASH,
+        bot_token=BOT_TOKEN,
+        workdir=SAVE_DIR,       # session 文件落在下载目录，不进仓库
+        no_updates=True,        # 只用来发文件，不收更新，避免和 PTB 轮询抢消息
+    )
+
 # 白名单：只响应指定用户私聊 + 指定群
 ALLOWED_USERS = {int(x) for x in os.environ["ALLOWED_USER"].split(",") if x.strip()}
 ALLOWED_GROUPS = {int(x) for x in os.environ["ALLOWED_GROUP"].split(",") if x.strip()}
@@ -1076,11 +1095,39 @@ def _get_video_dimensions(path: str):
     return 0, 0
 
 
+async def _pyro_send_video(msg, path: str, caption: str, w: int, h: int):
+    """用 Pyrogram（MTProto）发送大视频，保原画不压缩。走原消息的回复。"""
+    import subprocess as sp
+    probe = sp.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", path],
+        capture_output=True, text=True,
+    )
+    try:
+        duration = int(float(probe.stdout.strip()))
+    except ValueError:
+        duration = 0
+    await _pyro.send_video(
+        chat_id=msg.chat.id,
+        video=path,
+        caption=caption[:1024],
+        width=w or 0, height=h or 0, duration=duration,
+        supports_streaming=True,
+        reply_to_message_id=msg.message_id,
+    )
+
+
 async def _send_video(msg, video_path: str, caption: str, clean_url: str):
-    """压缩/转码后发送视频，发完清理临时文件"""
+    """发送视频：>50MB 且配了 Pyrogram → MTProto 直发原画；否则压到 50MB 内走 Bot API。发完清理临时文件。"""
     file_size = os.path.getsize(video_path) / (1024 * 1024)
     send_path = video_path
-    if file_size > 50:
+    use_pyro = PYRO_ENABLED and file_size > BOT_API_LIMIT_MB
+    if use_pyro and file_size > PYRO_LIMIT_MB:
+        await msg.reply_text(
+            f"⚠️ 视频过大（{file_size:.1f}MB），超过 {PYRO_LIMIT_MB}MB 上限，请到本地手动提取\n📁 {video_path}"
+        )
+        return False
+    if file_size > BOT_API_LIMIT_MB and not use_pyro:
         compressed = _compress_video(video_path)
         if compressed:
             send_path = compressed
@@ -1095,9 +1142,12 @@ async def _send_video(msg, video_path: str, caption: str, clean_url: str):
             os.remove(send_path)
         send_path = converted
     w, h = _get_video_dimensions(send_path)
-    with open(send_path, "rb") as vf:
-        await msg.reply_video(video=vf, width=w or None, height=h or None,
-                              caption=caption[:1024], supports_streaming=True)
+    if use_pyro:
+        await _pyro_send_video(msg, send_path, caption, w, h)
+    else:
+        with open(send_path, "rb") as vf:
+            await msg.reply_video(video=vf, width=w or None, height=h or None,
+                                  caption=caption[:1024], supports_streaming=True)
     if send_path != video_path and os.path.exists(send_path):
         os.remove(send_path)
     return True
@@ -1524,11 +1574,19 @@ async def _on_startup(app):
         print(f"[启动通知失败] {e}")
 
 async def _on_startup_with_jobs(app):
+    if _pyro is not None:
+        await _pyro.start()
+        print("✅ Pyrogram（大文件发送）已连接")
     await _on_startup(app)
     # 每7天跑一次抖音解析健康检测，first=10s 后先跑一次确认正常
     app.job_queue.run_repeating(_health_check_douyin, interval=7 * 24 * 3600, first=10)
 
+async def _on_shutdown(app):
+    if _pyro is not None and _pyro.is_connected:
+        await _pyro.stop()
+
 app.post_init = _on_startup_with_jobs
+app.post_shutdown = _on_shutdown
 import logging
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)

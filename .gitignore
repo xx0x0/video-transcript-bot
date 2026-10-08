@@ -7,4 +7,6 @@ __pycache__/
 x-cookies.txt
 *.mp4
 *.wav
+*.session
+*.session-journal
 .DS_Store
