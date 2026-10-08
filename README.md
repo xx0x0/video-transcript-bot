@@ -135,6 +135,8 @@ cp .env.example .env
 #   ALLOWED_USER     — 允许私聊的用户 ID（多个用英文逗号分隔）
 #   ALLOWED_GROUP    — 允许响应的群 ID（多个用英文逗号分隔）
 #   BADNEWS_COOKIES  — 可选，巴比馒头官网 Cookie
+#   TELEGRAM_API_ID  — 可选，my.telegram.org 申请；填了才支持发 >50MB 大文件（最高 2GB）
+#   TELEGRAM_API_HASH— 可选，同上，与 API_ID 成对填写
 ```
 
 启动：
@@ -186,7 +188,7 @@ python3 ~/douyin-bot/bot.py
 - 文案超过800字自动触发 AI 梳理
 - 抖音无需登录可以直接下载视频、提取文案
 - Instagram、小红书、X 等平台需要配置 cookie 才能下载
-- 视频超过 50MB 会自动压缩后发送（上限 200MB），超过 200MB 提示本地路径手动提取
+- 视频超过 50MB：配了 `TELEGRAM_API_ID`/`HASH` 则走 Pyrogram 直发原画（上限 2GB），超 2GB 提示本地路径手动提取；未配则自动压缩发送（上限 200MB），超 200MB 提示手动提取
 - 图文内容需要 cookie 才能自动提取，未配置时请手动保存图片
 - Whisper 首次运行会下载模型约 150MB
 - 10分钟视频处理约需 15-20 分钟，请耐心等待
@@ -230,6 +232,10 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ---
 
 ## 📜 更新日志
+
+### 2026-10-08
+- 🆕 **大文件改走 Pyrogram/MTProto 发送（上限 50MB→2GB）** — Bot API 上传硬限 50MB 导致长视频被压成 480×270 极糊；新增 Pyrogram（同一 bot token，MTProto 直连），>50MB 视频直发原画不压缩，X 选档上限放宽到 1900MB 可取 720P 原画；需在 `.env` 填 `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` 启用，留空则维持原 50MB 行为
+- ⚠️ **超过 2GB 的视频 TG 仍传不了** — 提示本地路径手动提取
 
 ### 2026-09-01
 - 🆕 **X 视频下载改走 FxTwitter 直链** — yt-dlp 的 X 提取器被 X API 改版打挂（最新版也报 Could not authenticate you），改用 FxTwitter 给的 video.twimg.com mp4 直链（免鉴权免 cookie），多档码率自动选不超 Telegram 50MB 上限的最高画质，yt-dlp 仅作兜底

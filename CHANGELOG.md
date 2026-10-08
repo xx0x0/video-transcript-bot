@@ -2,6 +2,27 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## 2026-10-08
+
+### 大文件改走 Pyrogram/MTProto 发送，X 视频可取 720P 原画
+
+**背景：** Telegram Bot API（HTTP）上传上限 50MB 是硬限。此前 X 视频下载时
+为了塞进 50MB，会在多档码率里挑「预估体积不超 48MB 的最高档」，长视频（如 44 分钟
+的推文视频）三档全部超限，只能落到最低的 480×270 / 78kbps，发出来极糊——
+而同一条视频在 X 网页端是自适应 HLS 流，清晰得多。根因是发送体积限制，不是 X 画质低。
+
+**方案：** 引入 Pyrogram（MTProto 协议，直连 Telegram 数据中心，用同一个 bot token，
+上传上限 2GB）。`_send_video` 里 >50MB 的视频改用 Pyrogram 直发**原画不压缩**，
+≤50MB 仍走原 python-telegram-bot。`fx_twitter` 的选档上限同步从 48MB 放宽到 1900MB，
+于是能选到 720P 档（上例约 694MB）。
+
+**开关与兼容：** 需在 `.env` 填 `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`
+（my.telegram.org 免费申请）才启用；两者留空则 100% 维持原 50MB/48MB 压缩行为，可随时回退。
+Pyrogram 会话文件 `douyin_bot_pyro.session` 落在 `SAVE_DIR`（仓库外），已加入 .gitignore。
+
+**限制：** bot token 上限 2GB（非 Premium 用户的 4GB）。超过 1900MB 的视频仍发不出，
+提示本地路径手动提取。未选 Docker 自建 Bot API Server 方案（更重，需 logOut 迁移 + 常驻容器）。
+
 ## 2026-09-01
 
 ### X 视频一律不转文案；抖音等平台直接全程转录（用户定稿）
