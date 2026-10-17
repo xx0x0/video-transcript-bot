@@ -2,6 +2,25 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## 2026-10-17
+
+### 大文件发群报 `Peer id invalid`：Pyrogram 换成 kurigram
+
+**现象：** >50MB 视频走 Pyrogram 发到群时报 `ValueError: Peer id invalid: -100xxxxxxxxxx`，
+私聊正常。
+
+**根因：** 官方 Pyrogram 2.0.106 是 2023 年最后一版，`utils.get_peer_type` 写死
+`MIN_CHANNEL_ID = -1002147483647`、`MIN_CHAT_ID = -2147483647`，即群号必须 ≤ 2147483647。
+三个白名单群均为新建、ID 超出该范围，发送前在本地判 ID 就抛错，还没到请求 Telegram。
+用户 ID 为正数且在范围内，所以私聊能发。用新建 session 独立复现：三个群全部失败。
+
+**方案：** `pip uninstall pyrogram && pip install kurigram`（2.2.26，维护中的分支，放宽了 ID 范围，
+import 名仍为 `pyrogram`，`bot.py` 零改动）。隔离 venv 实测同一脚本三个群全部解析成功。
+`no_updates=True` 保留，不是本次原因。
+
+**回滚：** `pip uninstall kurigram && pip install pyrogram==2.0.106`。
+若启动时旧 `douyin_bot_pyro.session` 报格式不兼容，删掉让 bot 重新登录即可（bot 登录无需验证码）。
+
 ## 2026-10-08
 
 ### 大文件改走 Pyrogram/MTProto 发送，X 视频可取 720P 原画

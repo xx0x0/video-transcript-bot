@@ -90,6 +90,8 @@ source ~/.zshrc
 
 ```bash
 /opt/homebrew/bin/pip3.11 install openai-whisper python-telegram-bot ffmpeg-python dashscope mcp tqdm
+# 大文件发送（可选）：装 kurigram，不要装官方 pyrogram（已停更，新群 ID 会报 Peer id invalid）
+/opt/homebrew/bin/pip3.11 install kurigram tgcrypto
 ```
 
 ### 3. 安装 douyin-mcp-server
@@ -232,6 +234,9 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ---
 
 ## 📜 更新日志
+
+### 2026-10-17
+- 🐛 **大文件发群报 `Peer id invalid`** — 官方 Pyrogram 2.0.106（2023 年停更）写死群 ID 上限 2147483647，新建群 ID 超限在本地就抛错；MTProto 库换成维护中的分支 kurigram 2.2.26（import 名不变，代码零改动），三个白名单群实测解析正常
 
 ### 2026-10-08
 - 🆕 **大文件改走 Pyrogram/MTProto 发送（上限 50MB→2GB）** — Bot API 上传硬限 50MB 导致长视频被压成 480×270 极糊；新增 Pyrogram（同一 bot token，MTProto 直连），>50MB 视频直发原画不压缩，X 选档上限放宽到 1900MB 可取 720P 原画；需在 `.env` 填 `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` 启用，留空则维持原 50MB 行为

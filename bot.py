@@ -16,6 +16,7 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ---- Pyrogram（MTProto）大文件发送：Bot API 上传上限 50MB，配了 api_id/hash 走 ----
 # Pyrogram 用同一个 bot_token，上限提到 2GB，>50MB 的视频改用它发，<=50MB 仍走原库
+# 库用 kurigram（import 名仍是 pyrogram）：官方 2.0.106 已停更，新群 ID 超其写死范围会报 Peer id invalid
 TELEGRAM_API_ID = int(os.environ.get("TELEGRAM_API_ID", "0") or "0")
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 PYRO_ENABLED = bool(TELEGRAM_API_ID and TELEGRAM_API_HASH)
