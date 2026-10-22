@@ -2,6 +2,24 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## 2026-10-22
+
+### 抖音图文只发了 4 张（实际 7 张）：兜底改读页面内嵌数据
+
+**现象：** 一条 7 张图的抖音图文帖，bot 只发出 4 张。
+
+**根因：** 两层降级叠加。① 移动端 feed API 对部分 note id 不返回本条而是返回别的内容
+（实测给了一条无关视频），bot 判为"无图片"落到 Playwright 兜底；② 兜底抓的是轮播
+`img.gallery-container__carousel__image`，轮播懒渲染只挂当前及相邻几张的 `src`，
+且是 `shrink:480` 缩略图。图 ≤5 张时抓得全，所以之前没暴露。
+
+**方案：** `douyin_note_gallery` 先读页面 `window._ROUTER_DATA` 里
+`item_list[0].images[*].url_list[0]`（全部原图），解析不到再退回轮播 DOM。
+图文发送改走新拆出的 `_send_photo_bytes`（每 10 张一组，1 张走 `reply_photo`），
+>10 张不再撞 Telegram 相册上限。实链接验证：7/7 张。
+
+**回滚：** `git revert` 本次提交。
+
 ## 2026-10-17
 
 ### 大文件发群报 `Peer id invalid`：Pyrogram 换成 kurigram

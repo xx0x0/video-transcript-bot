@@ -839,6 +839,11 @@ async def _send_media_with_caption(msg, image_paths, caption=""):
     for p in image_paths:
         with open(p, "rb") as f:
             photos.append(f.read())
+    await _send_photo_bytes(msg, photos, caption)
+
+
+async def _send_photo_bytes(msg, photos, caption=""):
+    """发送内存中的图片 bytes 列表（按 10 张分组，Telegram 相册上限）。"""
     if len(photos) == 1:
         if caption:
             await msg.reply_photo(photo=photos[0], caption=caption)
@@ -1173,9 +1178,37 @@ async def _run_whisper(target_path: str) -> str:
     return clean_hallucination(text)
 
 
+def _router_data_images(router_data):
+    """从抖音页面 window._ROUTER_DATA 里找图文帖 item_list[0].images[*].url_list[0]（原图）。
+    结构变了找不到就返回 []，由调用方退回轮播 DOM 抓法。"""
+    def find_item(o):
+        if isinstance(o, dict):
+            items = o.get("item_list")
+            if isinstance(items, list) and items and isinstance(items[0], dict) and items[0].get("images"):
+                return items[0]
+            for v in o.values():
+                r = find_item(v)
+                if r:
+                    return r
+        elif isinstance(o, list):
+            for v in o:
+                r = find_item(v)
+                if r:
+                    return r
+        return None
+    item = find_item(router_data) or {}
+    urls = []
+    for im in item.get("images") or []:
+        lst = im.get("url_list") if isinstance(im, dict) else None
+        if lst and lst[0] not in urls:
+            urls.append(lst[0])
+    return urls
+
+
 def douyin_note_gallery(url):
-    """Playwright 打开抖音图文分享页抓轮播图（移动端 feed API 失效后的兜底）。
-    返回 (标题, 图片URL列表)。轮播图 class 为 gallery-container__carousel__image，
+    """Playwright 打开抖音图文分享页抓图（移动端 feed API 失效后的兜底）。
+    返回 (标题, 图片URL列表)。优先读页面内嵌 _ROUTER_DATA（全部原图）；
+    读不到再抓轮播 img.gallery-container__carousel__image（懒渲染，只有已挂载的几张、且是缩略图）。
     推荐流图片是 related-*/card__cover，不会混入。"""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -1188,10 +1221,16 @@ def douyin_note_gallery(url):
         page.goto(url, wait_until="domcontentloaded", timeout=45000)
         page.wait_for_timeout(5000)
         title = re.sub(r"\s*-\s*抖音$", "", page.title() or "").strip()
-        srcs = page.evaluate(
-            "() => Array.from(document.querySelectorAll('img.gallery-container__carousel__image'))"
-            ".map(i => i.currentSrc || i.src).filter(Boolean)"
-        )
+        srcs = []
+        try:
+            srcs = _router_data_images(page.evaluate("() => window._ROUTER_DATA || null") or {})
+        except Exception as e:
+            print(f"[图文 _ROUTER_DATA 解析失败，退回轮播 DOM] {e}")
+        if not srcs:
+            srcs = page.evaluate(
+                "() => Array.from(document.querySelectorAll('img.gallery-container__carousel__image'))"
+                ".map(i => i.currentSrc || i.src).filter(Boolean)"
+            )
         browser.close()
     seen = set()
     urls = [u for u in srcs if not (u in seen or seen.add(u))]
@@ -1250,9 +1289,7 @@ async def _handle_xiaohongshu_note(msg, clean_url: str):
         if not photo_data:
             await msg.reply_text(f"❌ 未能下载到图片\n🔗 {clean_url}")
             return
-        media_group = [InputMediaPhoto(media=d) for d in photo_data]
-        media_group[-1] = InputMediaPhoto(media=photo_data[-1], caption=caption_text[:1024])
-        await msg.reply_media_group(media=media_group)
+        await _send_photo_bytes(msg, photo_data, caption_text[:1024])
     except Exception as e:
         print(f"[ERROR 图文] {e}")
         await msg.reply_text(f"❌ 图文提取失败：{e}\n🔗 {clean_url}")
