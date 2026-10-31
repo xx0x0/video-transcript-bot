@@ -615,7 +615,19 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # 解析短链接，去除追踪参数
     clean_url = text
-    if "v.douyin.com" in text or "b23.tv" in text:
+    if "xhslink.com" in text:
+        # 小红书短链只取第一跳 Location（真实帖子地址，带 xsec_token），
+        # 不能一路跟到底：未登录会被再跳到 /login，yt-dlp 就匹配不上小红书提取器
+        try:
+            # xhslink 对 HEAD 返回 404，必须 GET
+            r = requests.get(text, allow_redirects=False, timeout=10, stream=True)
+            loc = r.headers.get("Location", "")
+            r.close()
+            if "xiaohongshu.com" in loc:
+                clean_url = loc
+        except Exception:
+            pass
+    elif "v.douyin.com" in text or "b23.tv" in text:
         try:
             r = requests.head(text, allow_redirects=True, timeout=10)
             real_url = r.url

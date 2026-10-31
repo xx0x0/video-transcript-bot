@@ -2,6 +2,17 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-10-31] 小红书短链展开（修复视频下载静默失败）
+
+**现象：** 群里发 `xhslink.com/o/...` 短链，日志只有 `[silent skip] ... download failed: ...%26exSource%3Dnull`，群里无回复。
+完整报错是 yt-dlp `Unsupported URL: https://www.xiaohongshu.com/login?redirectPath=...`。
+
+**原因：** bot 把短链原样交给 yt-dlp；yt-dlp 自己跟跳转时，小红书把未登录的跳转请求再甩到 `/login`，最终 URL 匹配不上 XiaoHongShu 提取器。
+真实帖子地址（第一跳 Location，带 `xsec_token`）直接给 yt-dlp 不登录就能下，实测成功。
+
+**改动：** `handle()` 短链展开新增 xhslink 分支：GET 不跟跳转，只取第一跳 Location 作 clean_url（xhslink 对 HEAD 返回 404，必须 GET）。
+不涉及小红书图文帖。
+
 ## [2026-10-31] 功能开关 + VPS 部署（替代独立精简版）
 
 **决策：** 原计划做独立 `vps/bot_lite.py`，写完后改为"同一个 bot.py + 两个开关"，避免两份 Telegram 代码漂移。
