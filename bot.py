@@ -3,15 +3,25 @@ import subprocess, os, sys, json, re, requests, glob, asyncio
 from telegram import Update, InputMediaPhoto
 from telegram.error import NetworkError, TimedOut, BadRequest
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
-from playwright.sync_api import sync_playwright
 from PIL import Image
+# playwright 按需在函数内 import：ENABLE_SCREENSHOT=0 的机器（VPS）不用装
 
 # 从环境变量读取（由 run.sh 加载 .env 注入）
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 BADNEWS_COOKIES = os.environ.get("BADNEWS_COOKIES", "")
 
-SAVE_DIR = os.path.expanduser("~/Downloads/抖音")
+SAVE_DIR = os.path.expanduser(os.environ.get("SAVE_DIR") or "~/Downloads/抖音")
 os.makedirs(SAVE_DIR, exist_ok=True)
+X_COOKIES = os.path.expanduser(os.environ.get("X_COOKIES") or "~/x-cookies.txt")
+DOUYIN_COOKIES = os.path.expanduser(os.environ.get("DOUYIN_COOKIES") or "~/douyin-cookies.txt")
+
+# ---- 功能开关（.env 里填 0 关闭；默认全开）----
+# ENABLE_TRANSCRIBE=0：不跑 Whisper 转文案、不调 Ollama 梳理，只发视频+标题/原文（VPS 不装模型）
+# ENABLE_SCREENSHOT=0：不开 Playwright，文章链接只发文字+图，不支持腾讯新闻视频、抖音图文无浏览器兜底
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "1").strip().lower() not in ("0", "false", "no", "off")
+ENABLE_TRANSCRIBE = _flag("ENABLE_TRANSCRIBE")
+ENABLE_SCREENSHOT = _flag("ENABLE_SCREENSHOT")
 
 # ---- Pyrogram（MTProto）大文件发送：Bot API 上传上限 50MB，配了 api_id/hash 走 ----
 # Pyrogram 用同一个 bot_token，上限提到 2GB，>50MB 的视频改用它发，<=50MB 仍走原库
@@ -58,9 +68,7 @@ VIDEO_ONLY = (
     "instagram.com", "kuaishou.com", "xiaohongshu.com", "xhslink.com",
 )
 
-# 抖音解析与 vps/ 精简版共用同一份 douyin.py：
-# 移动端 feed API 已不认 aweme_id（2026-10-31 实测返回随机推荐流），改抓 iesdouyin 分享页内嵌数据
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vps"))
+# 抖音解析：移动端 feed API 已不认 aweme_id（2026-10-31 实测返回随机推荐流），改抓 iesdouyin 分享页内嵌数据
 import douyin as douyin_api
 
 # X 已删光 data-testid（2026-08 实测），旧的按 testid 隐藏弹窗的 CSS 失配；
@@ -83,6 +91,7 @@ def webpage_screenshot(url, save_path_prefix, max_segments=8):
     每段一张 viewport 大小的清晰图，便于 Telegram 显示时不被压糊。
     X/Twitter 会额外隐藏侧栏和登录弹窗。
     """
+    from playwright.sync_api import sync_playwright
     paths = []
     is_x = ("twitter.com" in url) or ("x.com" in url)
 
@@ -562,6 +571,12 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # 未知链接：白名单文章直接截图；其余先 yt-dlp 探测，有视频走下载，没视频截图
     if not is_known_platform:
+        if not ENABLE_SCREENSHOT and not is_article_url(text):
+            # 截图关了：未知链接只在 yt-dlp 能下视频时处理，否则忽略
+            loop = asyncio.get_event_loop()
+            if not await loop.run_in_executor(None, has_video, text):
+                print(f"[skip 未知链接，截图已关闭] {text}")
+                return
         if is_article_url(text):
             try:
                 await _process_article(msg, text)
@@ -637,6 +652,7 @@ def extract_page_content(url, save_path_prefix):
     quote = None
     kind = "generic"
 
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         # X 对 headless 浏览器一律返回 403 空白页（2026-08 起），X 改走有头模式，窗口移到屏幕外
         browser = p.chromium.launch(
@@ -927,8 +943,14 @@ async def _process_article(msg, url: str):
         from fx_twitter import fetch_x_content
         info = await loop.run_in_executor(None, fetch_x_content, url, prefix)
         from_fx = info is not None
+        if info is None and not ENABLE_SCREENSHOT:
+            await msg.reply_text(f"❌ 推文解析失败（FxTwitter 无数据，截图功能已关闭）\n🔗 {url}")
+            return
         if info is None:
             info = await loop.run_in_executor(None, extract_page_content, url, prefix)
+    elif not ENABLE_SCREENSHOT:
+        await msg.reply_text(f"❌ 内容提取失败（该链接需要网页截图，ENABLE_SCREENSHOT 已关闭）\n🔗 {url}")
+        return
     else:
         info = await loop.run_in_executor(None, extract_page_content, url, prefix)
     kind = info["kind"]
@@ -947,6 +969,7 @@ async def _process_article(msg, url: str):
         do_screenshot = len(text) > SCREENSHOT_THRESHOLD
     else:
         do_screenshot = False
+    do_screenshot = do_screenshot and ENABLE_SCREENSHOT  # 截图关了：长推/文章直接发文字
 
     if do_screenshot:
         # X 走本地渲染卡片：FxTwitter 数据 → 本地 HTML → headless 整页截图 + PIL 切分
@@ -965,7 +988,7 @@ async def _process_article(msg, url: str):
                 else:
                     summary_src = text
                 summary = ""
-                if summary_src.strip():
+                if summary_src.strip() and ENABLE_TRANSCRIBE:
                     summary = await loop.run_in_executor(None, analyze_brief, summary_src, title)
                 await _send_screenshot_album(msg, ss_paths, title, url, summary)
                 return
@@ -989,6 +1012,9 @@ async def _process_article(msg, url: str):
 
     # 全空 → 截图兜底
     if not body_text and not images:
+        if not ENABLE_SCREENSHOT:
+            await msg.reply_text(f"❌ 内容提取失败\n🔗 {url}")
+            return
         ss_paths, _ = await loop.run_in_executor(None, webpage_screenshot, url, prefix)
         ss_paths = [p for p in ss_paths if os.path.exists(p)]
         if not ss_paths:
@@ -1211,6 +1237,7 @@ def douyin_note_gallery(url):
     返回 (标题, 图片URL列表)。优先读页面内嵌 _ROUTER_DATA（全部原图）；
     读不到再抓轮播 img.gallery-container__carousel__image（懒渲染，只有已挂载的几张、且是缩略图）。
     推荐流图片是 related-*/card__cover，不会混入。"""
+    from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
@@ -1259,7 +1286,7 @@ async def _handle_xiaohongshu_note(msg, clean_url: str):
         if item is not None:
             title = item.title
             images = list(item.images)
-        if not images:
+        if not images and ENABLE_SCREENSHOT:
             print("[图文分享页无图片，playwright 兜底]")
             try:
                 loop = asyncio.get_event_loop()
@@ -1298,6 +1325,9 @@ async def _handle_xiaohongshu_note(msg, clean_url: str):
 
 async def _handle_qqnews(msg, clean_url: str, video_path: str) -> bool:
     """QQ新闻视频下载，成功返回 True，失败已回复消息返回 False"""
+    if not ENABLE_SCREENSHOT:
+        await msg.reply_text(f"❌ 腾讯新闻视频需要浏览器抓取，ENABLE_SCREENSHOT 已关闭\n🔗 {clean_url}")
+        return False
     try:
         from qq_news_extractor import download_qq_news_video
         ok = await download_qq_news_video(clean_url, video_path)
@@ -1380,8 +1410,7 @@ async def _handle_douyin(msg, clean_url: str, video_path: str):
             await asyncio.sleep(2 * (_attempt + 1))
         elif not video_url:
             print("[抖音分享页全部失败，尝试 yt-dlp 兜底]")
-            douyin_cookies = os.path.expanduser("~/douyin-cookies.txt")
-            douyin_cookie_args = ["--cookies", douyin_cookies] if os.path.exists(douyin_cookies) else []
+            douyin_cookie_args = ["--cookies", DOUYIN_COOKIES] if os.path.exists(DOUYIN_COOKIES) else []
             dl_fb = await _run_subprocess(
                 "yt-dlp", "--no-playlist", *douyin_cookie_args, "-o", video_path, clean_url
             )
@@ -1415,8 +1444,7 @@ async def _handle_douyin(msg, clean_url: str, video_path: str):
 
 async def _handle_generic_ytdlp(msg, clean_url: str, video_path: str, is_x: bool):
     """通用 yt-dlp 下载（X/YouTube/Bilibili 等），返回 (success: bool, title: str)"""
-    cookies = os.path.expanduser("~/x-cookies.txt")
-    cookie_args = ["--cookies", cookies] if os.path.exists(cookies) else []
+    cookie_args = ["--cookies", X_COOKIES] if os.path.exists(X_COOKIES) else []
     title = ""
 
     if is_x:
@@ -1518,6 +1546,9 @@ async def _process(msg, clean_url: str, mode: str = "default"):
         return
 
     if mode == "text_only":
+        if not ENABLE_TRANSCRIBE:
+            await msg.reply_text((title_prefix.rstrip() or "（无标题）") + url_suffix)
+            return
         transcript = await _run_whisper(video_path)
         if transcript and archive_clip:
             await asyncio.to_thread(
@@ -1535,7 +1566,8 @@ async def _process(msg, clean_url: str, mode: str = "default"):
     # X 视频一律不转文案（2026-09-01 用户定稿：多为无意义内容，15 秒试探的
     # 连贯性判定拦不住，干脆不试探不转录，也就不会归档进 pkb）；
     # 抖音等其他平台直接全程转录
-    transcript = "" if is_x else await _run_whisper(video_path)
+    # ENABLE_TRANSCRIBE=0（VPS 无模型）同样不转录，只发视频+标题
+    transcript = "" if (is_x or not ENABLE_TRANSCRIBE) else await _run_whisper(video_path)
     if transcript and archive_clip:
         await asyncio.to_thread(
             archive_clip, clean_url, title, transcript,
@@ -1576,9 +1608,6 @@ async def _process(msg, clean_url: str, mode: str = "default"):
             await msg.reply_text(full_text[:4000])
             full_text = full_text[4000:]
 
-app = ApplicationBuilder().token(BOT_TOKEN).read_timeout(300).write_timeout(600).connect_timeout(60).build()
-app.add_handler(MessageHandler(filters.TEXT, handle))
-
 # 每7天检测一次抖音解析链路是否还有效
 _PROBE_VIDEO_ID = "7700146181942414642"  # 兜底探针（2026-10-31 在线）；正常由 feed API 现取
 
@@ -1596,12 +1625,15 @@ async def _health_check_douyin(context: ContextTypes.DEFAULT_TYPE):
 async def _on_startup(app):
     if not BOT_OWNER:
         return
+    flags = (f"转文案 {'开' if ENABLE_TRANSCRIBE else '关'} · 截图 {'开' if ENABLE_SCREENSHOT else '关'}"
+             f" · 大文件 {'开' if PYRO_ENABLED else '关'}")
     startup_msg = (
         "🤖 Douyin Bot 已启动\n"
+        f"{flags}\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "直接发链接 → 视频 + 文案\n"
+        f"直接发链接 → 视频 + {'文案' if ENABLE_TRANSCRIBE else '标题'}\n"
         "加 标题 或 /title → 只发视频+标题\n"
-        "加 文案 或 /text → 只发文案\n"
+        f"加 文案 或 /text → 只发{'文案' if ENABLE_TRANSCRIBE else '标题文字'}\n"
         "加 跳过 或 /skip → 忽略不处理\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "支持：抖音 / TikTok / X / YouTube\n"
@@ -1624,10 +1656,17 @@ async def _on_shutdown(app):
     if _pyro is not None and _pyro.is_connected:
         await _pyro.stop()
 
-app.post_init = _on_startup_with_jobs
-app.post_shutdown = _on_shutdown
-import logging
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.WARNING)
-print("✅ Bot 启动中...")
-app.run_polling(drop_pending_updates=False)
+def main():
+    import logging
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.WARNING)
+    app = ApplicationBuilder().token(BOT_TOKEN).read_timeout(300).write_timeout(600).connect_timeout(60).build()
+    app.add_handler(MessageHandler(filters.TEXT, handle))
+    app.post_init = _on_startup_with_jobs
+    app.post_shutdown = _on_shutdown
+    print(f"✅ Bot 启动中... 转文案={'开' if ENABLE_TRANSCRIBE else '关'} 截图={'开' if ENABLE_SCREENSHOT else '关'} SAVE_DIR={SAVE_DIR}")
+    app.run_polling(drop_pending_updates=False)
+
+
+if __name__ == "__main__":
+    main()

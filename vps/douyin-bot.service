@@ -1,5 +1,5 @@
 [Unit]
-Description=Douyin Bot (lite) - Telegram video/image/text fetcher
+Description=Douyin Bot - Telegram video/image/text fetcher
 After=network-online.target
 Wants=network-online.target
 
@@ -8,7 +8,7 @@ Type=simple
 User=__RUN_USER__
 WorkingDirectory=__APP_DIR__
 EnvironmentFile=__APP_DIR__/.env
-ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/bot_lite.py
+ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/bot.py
 Restart=always
 RestartSec=10
 # yt-dlp 偶尔要更新才能下；每次启动前顺手升级（失败不影响启动）

@@ -6,7 +6,7 @@ A Telegram bot that extracts transcripts from short-form video (Douyin, X/Twitte
 
 ---
 
-> **VPS 精简版**：只要下载视频/图片 + 提取标题/推文原文、不要转录和 AI 梳理的，看 [`vps/README.md`](vps/README.md)，无浏览器无模型依赖，一键 systemd 部署。
+> **部署到 VPS / 不要转录和截图**：`.env` 里 `ENABLE_TRANSCRIBE=0`、`ENABLE_SCREENSHOT=0`，不装 Whisper/Ollama/Playwright 也能跑，只下载视频/图片 + 标题/推文原文。一键 systemd 部署看 [`vps/README.md`](vps/README.md)。
 
 ## 🚀 快速启动
 
@@ -137,6 +137,9 @@ cp .env.example .env
 #   BADNEWS_COOKIES  — 可选，巴比馒头官网 Cookie
 #   TELEGRAM_API_ID  — 可选，my.telegram.org 申请；填了才支持发 >50MB 大文件（最高 2GB）
 #   TELEGRAM_API_HASH— 可选，同上，与 API_ID 成对填写
+#   ENABLE_TRANSCRIBE — 可选，填 0 关掉 Whisper 转文案 + Ollama 梳理（VPS 无模型时）
+#   ENABLE_SCREENSHOT — 可选，填 0 关掉 Playwright 截图（不装浏览器时）
+#   SAVE_DIR / X_COOKIES / DOUYIN_COOKIES — 可选，改默认路径
 ```
 
 启动：
@@ -235,7 +238,7 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 
 ### 2026-10-31
 - 🐛 **抖音解析换路径** — 移动端 feed API 已不认 `aweme_id`（实测返回随机推荐流，会下到无关视频），bot.py 改用 `vps/douyin.py` 抓 iesdouyin 分享页内嵌数据，不再依赖 douyin-mcp-server；周检改为真实走一遍解析路径
-- 🆕 **`vps/` 精简版** — 只下载视频/图片 + 提取标题/推文原文，无 Whisper/Ollama/Playwright，systemd 一键部署，详见 `vps/README.md`
+- 🆕 **功能开关 + VPS 部署** — `.env` 新增 `ENABLE_TRANSCRIBE` / `ENABLE_SCREENSHOT`（填 0 关闭），Playwright 改按需 import，关掉后不装模型和浏览器也能跑；`SAVE_DIR` / `X_COOKIES` / `DOUYIN_COOKIES` 可配；`vps/` 提供 install.sh + systemd 一键部署，详见 `vps/README.md`
 
 ### 2026-10-17
 - 🐛 **大文件发群报 `Peer id invalid`** — 官方 Pyrogram 2.0.106（2023 年停更）写死群 ID 上限 2147483647，新建群 ID 超限在本地就抛错；MTProto 库换成维护中的分支 kurigram 2.2.26（import 名不变，代码零改动），三个白名单群实测解析正常

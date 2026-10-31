@@ -2,13 +2,35 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-10-31] 功能开关 + VPS 部署（替代独立精简版）
+
+**决策：** 原计划做独立 `vps/bot_lite.py`，写完后改为"同一个 bot.py + 两个开关"，避免两份 Telegram 代码漂移。
+`bot_lite.py` / `vps/fx_twitter.py` / `vps/.env.example` / `vps/run.sh` 已删，`douyin.py` 移到仓库根目录。
+
+**bot.py 改动：**
+- 新增 `ENABLE_TRANSCRIBE`（默认 1）：0 则 `_process` 不跑 Whisper、不调 Ollama，`/text` 口令只发标题+链接，X 卡片不做 AI 短梳理
+- 新增 `ENABLE_SCREENSHOT`（默认 1）：0 则 Playwright 不 import；X 长推/文章直接发文字；非 X 文章链接回复"需要截图"提示；
+  `handle()` 对未知链接只在 yt-dlp 探到视频时处理否则忽略；腾讯新闻视频提示不支持；抖音图文无浏览器兜底
+- `from playwright.sync_api import sync_playwright` 从顶层移进 `webpage_screenshot` / `extract_page_content` / `douyin_note_gallery`
+- `SAVE_DIR` / `X_COOKIES` / `DOUYIN_COOKIES` 读 env，留空用原默认
+- 启动语句移进 `main()` + `if __name__ == "__main__"`，可 import 做测试；启动通知首行显示开关状态
+- 开关全开时行为与改前一致（代码路径未变，只多了 `and ENABLE_*` 判断）
+
+**部署文件：** `vps/install.sh`（在仓库根目录执行，装 `vps/requirements.txt` 精简依赖，自动生成关掉开关的 `.env`）、
+`vps/douyin-bot.service`（跑 `bot.py`）、`run.sh` 优先用 `.venv`；`.env.example` 新增开关与路径项。
+
+**验证：** `py_compile` 通过；模拟 VPS（`sys.modules['playwright']=None` + 两开关=0）import 成功；默认开关 import 成功、
+路径默认值不变。**运行态未测**：Mac 重启后发抖音视频 / 抖音图文 / X 推文各一条确认；VPS 首次部署看 journalctl。
+
+**回滚：** `git revert` 本次提交（连同上一条抖音修复一起回滚需两次 revert）。
+
 ## [2026-10-31] bot.py 抖音解析换路径（feed API 失效）
 
 **现象：** 移动端 feed API `aweme.snssdk.com/aweme/v1/feed/?aweme_id=` 不再按 ID 返回，
 连续请求同一 ID 得到的 `aweme_list[0].aweme_id` 每次不同，是随机推荐流。bot.py 走此 API 会下到无关视频，
 旧周检只看列表非空，所以一直"正常"。
 
-**方案：** bot.py 去掉 `douyin_mcp_server` 依赖，改 `import douyin as douyin_api`（`vps/douyin.py`，与精简版同一份）：
+**方案：** bot.py 去掉 `douyin_mcp_server` 依赖，改 `import douyin as douyin_api`（仓库根目录 `douyin.py`）：
 - `_handle_douyin` / `_handle_xiaohongshu_note` 改用 `douyin_api.fetch_item`（分享页 `_ROUTER_DATA`），
   `/video/` 链接解析出图文时自动转图文流程；被过滤内容直接提示不可用
 - 视频直链先 `download_stream` 流式下，失败再 yt-dlp；yt-dlp 页面兜底与 Playwright 图文兜底保留
@@ -18,28 +40,7 @@
 **验证：** `py_compile` 通过；解析逻辑与 vps 精简版同源，精简版已实测视频解析+下载成功；
 **bot.py 本身未重启实测，重启后发一条抖音视频 + 一条图文确认。**
 
-**回滚：** `git revert` 本次提交（vps/douyin.py 需保留，bot.py 回滚后仍依赖 douyin-mcp-server）。
-
-## [2026-10-31] VPS 精简版 `vps/`
-
-### 新增
-- **`vps/` 独立精简版**（`bot_lite.py` + `douyin.py` + `fx_twitter.py`）：只保留下载视频 / 下载图片 / 提取现成文字（标题、简介、推文原文），去掉 Whisper、Ollama、Playwright、pkb 归档，无浏览器无模型依赖，可部署到 1 核 1G Linux VPS
-- 一键部署：`install.sh`（apt ffmpeg + venv + pip + systemd）、`douyin-bot.service`、`run.sh`、`.env.example`、`README.md`
-- 抖音解析重写为 `douyin.py`（无 mcp / dashscope / ffmpeg-python 依赖）：requests 带 session 抓 iesdouyin 分享页，首次响应种 `ttwid`，第二次起 `_ROUTER_DATA` 内 `videoInfoRes.item_list[0]` 有直链 / 图文 / 标题，`/playwm/`→`/play/` 去水印；实测解析 2.7s、下载 3.8MB 无水印 mp4 成功
-- ⚠️ **移动端 feed API 已失效**（`aweme.snssdk.com/aweme/v1/feed/?aweme_id=`）：2026-10-31 实测连续 4 次请求同一 ID 返回的 `aweme_list[0].aweme_id` 全不相同、与请求无关，即返回的是随机推荐流。**完整版 `bot.py` 的抖音路径（douyin-mcp-server `parse_share_url`）用的正是这个 API，现在会下到无关视频，周检 `_health_check_douyin` 只看列表非空所以一直报正常**——本次未改 bot.py，待用户决定
-- 周检改为：feed API 现取一个在线 ID → 走分享页路径确认能拿到直链
-- 通用 yt-dlp 平台改用 `--write-info-json` 同时拿标题 + 简介作为"文字"
-
-### 行为差异（相对完整版）
-- X 长推 / 文章不渲染图片卡片，直接发文字（>4000 字分条）
-- 抖音图文与视频同一路径（`item_list[0].images`），字段沿用完整版 `_router_data_images` 的结构，但本次没有图文链接可实测
-- 内容被过滤（`filter_list` 非空：地区限制 / 已删除）直接提示不可用，不重试
-- 非白名单平台链接一律忽略（完整版会截图）
-- 路径可配：`SAVE_DIR` / `X_COOKIES` / `DOUYIN_COOKIES`；原片仍保留在 `SAVE_DIR` 不自动删
-
-### 原因
-- 本地 Mac 所在网络需要定期人工验证，bot 常掉线；VPS 常驻更稳
-- 本地 Whisper / Ollama 精度不够，用户决定不要转录和 AI 梳理
+**回滚：** `git revert` 本次提交（`douyin.py` 需保留，bot.py 回滚后仍依赖 douyin-mcp-server）。
 
 ## 2026-10-22
 
