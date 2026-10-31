@@ -2,6 +2,15 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-10-31] 默认只有抖音转文案，其他平台一律不转（用户定稿）
+
+**决策：** 用户拍板：默认模式只转抖音，其他平台（X / Instagram / 小红书 / B站 / YouTube 等）一律不转文案。
+此前 2026-09-01 记录为"X 一律不转、其他平台全程转录"，用户表示并未定过这条；本次以平台白名单取代。
+
+**改动：** `_process` 里 `transcript = "" if is_x ...` 改为 `await _run_whisper(...) if (is_douyin and ENABLE_TRANSCRIBE) else ""`。
+非抖音视频只发 视频+标题/原文+链接，不跑 Whisper / Ollama、不归档 pkb。
+`/text` 口令仍可对任何链接强制转录；`ENABLE_TRANSCRIBE=0` 仍整体关掉。
+
 ## [2026-10-31] 小红书短链展开（修复视频下载静默失败）
 
 **现象：** 群里发 `xhslink.com/o/...` 短链，日志只有 `[silent skip] ... download failed: ...%26exSource%3Dnull`，群里无回复。

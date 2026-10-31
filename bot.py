@@ -1575,11 +1575,9 @@ async def _process(msg, clean_url: str, mode: str = "default"):
             await msg.reply_text(f"❌ 未能提取到文案\n🔗 {clean_url}")
         return
 
-    # X 视频一律不转文案（2026-09-01 用户定稿：多为无意义内容，15 秒试探的
-    # 连贯性判定拦不住，干脆不试探不转录，也就不会归档进 pkb）；
-    # 抖音等其他平台直接全程转录
-    # ENABLE_TRANSCRIBE=0（VPS 无模型）同样不转录，只发视频+标题
-    transcript = "" if (is_x or not ENABLE_TRANSCRIBE) else await _run_whisper(video_path)
+    # 默认模式只有抖音全程转文案（2026-10-31 用户定稿：其他平台一律不转，只发 视频+标题/原文+链接；
+    # 要强制转录用 /text 口令）。ENABLE_TRANSCRIBE=0（VPS 无模型）同样不转录
+    transcript = await _run_whisper(video_path) if (is_douyin and ENABLE_TRANSCRIBE) else ""
     if transcript and archive_clip:
         await asyncio.to_thread(
             archive_clip, clean_url, title, transcript,

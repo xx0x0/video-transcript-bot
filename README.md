@@ -237,6 +237,7 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ## 📜 更新日志
 
 ### 2026-10-31
+- 🔧 **默认只有抖音转文案（定稿）** — 其他平台（X / Instagram / 小红书 / B站 / YouTube 等）默认一律不跑 Whisper，只发 视频+标题/原文+链接，也不归档 pkb；要转录加 `/text` 口令强制
 - 🐛 **抖音解析换路径** — 移动端 feed API 已不认 `aweme_id`（实测返回随机推荐流，会下到无关视频），bot.py 改用 `vps/douyin.py` 抓 iesdouyin 分享页内嵌数据，不再依赖 douyin-mcp-server；周检改为真实走一遍解析路径
 - 🆕 **功能开关 + VPS 部署** — `.env` 新增 `ENABLE_TRANSCRIBE` / `ENABLE_SCREENSHOT`（填 0 关闭），Playwright 改按需 import，关掉后不装模型和浏览器也能跑；`SAVE_DIR` / `X_COOKIES` / `DOUYIN_COOKIES` 可配；`vps/` 提供 install.sh + systemd 一键部署，详见 `vps/README.md`
 
