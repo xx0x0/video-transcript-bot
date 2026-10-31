@@ -1,0 +1,7 @@
+python-telegram-bot[job-queue]>=21.0
+requests>=2.31
+Pillow>=10.0
+yt-dlp>=2026.8.19
+# 大文件发送（>50MB 走 MTProto）。用 kurigram 不要用官方 pyrogram（已停更，新群 ID 报 Peer id invalid）
+kurigram>=2.2.26
+tgcrypto>=1.2.5

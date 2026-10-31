@@ -6,6 +6,8 @@ A Telegram bot that extracts transcripts from short-form video (Douyin, X/Twitte
 
 ---
 
+> **VPS 精简版**：只要下载视频/图片 + 提取标题/推文原文、不要转录和 AI 梳理的，看 [`vps/README.md`](vps/README.md)，无浏览器无模型依赖，一键 systemd 部署。
+
 ## 🚀 快速启动
 
 ```bash
