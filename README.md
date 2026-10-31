@@ -91,18 +91,14 @@ source ~/.zshrc
 ### 2. 安装 Python 依赖
 
 ```bash
-/opt/homebrew/bin/pip3.11 install openai-whisper python-telegram-bot ffmpeg-python dashscope mcp tqdm
+/opt/homebrew/bin/pip3.11 install openai-whisper python-telegram-bot requests pillow playwright
 # 大文件发送（可选）：装 kurigram，不要装官方 pyrogram（已停更，新群 ID 会报 Peer id invalid）
 /opt/homebrew/bin/pip3.11 install kurigram tgcrypto
 ```
 
-### 3. 安装 douyin-mcp-server
+### 3. 抖音解析
 
-```bash
-git clone https://github.com/yzfly/douyin-mcp-server.git ~/douyin-mcp-server
-cd ~/douyin-mcp-server
-uv sync --python 3.11
-```
+无需额外安装：抖音解析在仓库自带的 `vps/douyin.py`（抓分享页内嵌数据，无需登录），bot.py 直接引用。
 
 ### 4. 安装本地 AI 模型
 
@@ -152,7 +148,7 @@ chmod +x run.sh    # 首次运行赋予可执行权限
 
 > **`run.sh` 做了什么：** 检查 `.env` 是否存在 → `source .env` 注入环境变量 → 用 `python3.11` 跑 `bot.py`。
 >
-> **如果运行失败**，检查 `bot.py` 里的路径（`SAVE_DIR`、`DOUYIN_MCP`）是否与实际文件位置一致，以及 `.env` 是否填全。
+> **如果运行失败**，检查 `bot.py` 里的路径（`SAVE_DIR`）是否与实际位置一致，以及 `.env` 是否填全。
 
 ---
 
@@ -163,7 +159,7 @@ Telegram 在中国大陆被封锁，Bot 需要连接 `api.telegram.org`，**必�
 如果使用虚拟环境安装的依赖，启动方式改为：
 
 ```bash
-source ~/douyin-mcp-server/venv/bin/activate
+source ~/douyin-bot/venv/bin/activate
 set -a && source .env && set +a    # 加载 .env 到环境变量
 python3 ~/douyin-bot/bot.py
 ```
@@ -236,6 +232,10 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ---
 
 ## 📜 更新日志
+
+### 2026-10-31
+- 🐛 **抖音解析换路径** — 移动端 feed API 已不认 `aweme_id`（实测返回随机推荐流，会下到无关视频），bot.py 改用 `vps/douyin.py` 抓 iesdouyin 分享页内嵌数据，不再依赖 douyin-mcp-server；周检改为真实走一遍解析路径
+- 🆕 **`vps/` 精简版** — 只下载视频/图片 + 提取标题/推文原文，无 Whisper/Ollama/Playwright，systemd 一键部署，详见 `vps/README.md`
 
 ### 2026-10-17
 - 🐛 **大文件发群报 `Peer id invalid`** — 官方 Pyrogram 2.0.106（2023 年停更）写死群 ID 上限 2147483647，新建群 ID 超限在本地就抛错；MTProto 库换成维护中的分支 kurigram 2.2.26（import 名不变，代码零改动），三个白名单群实测解析正常

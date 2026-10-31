@@ -2,6 +2,24 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-10-31] bot.py 抖音解析换路径（feed API 失效）
+
+**现象：** 移动端 feed API `aweme.snssdk.com/aweme/v1/feed/?aweme_id=` 不再按 ID 返回，
+连续请求同一 ID 得到的 `aweme_list[0].aweme_id` 每次不同，是随机推荐流。bot.py 走此 API 会下到无关视频，
+旧周检只看列表非空，所以一直"正常"。
+
+**方案：** bot.py 去掉 `douyin_mcp_server` 依赖，改 `import douyin as douyin_api`（`vps/douyin.py`，与精简版同一份）：
+- `_handle_douyin` / `_handle_xiaohongshu_note` 改用 `douyin_api.fetch_item`（分享页 `_ROUTER_DATA`），
+  `/video/` 链接解析出图文时自动转图文流程；被过滤内容直接提示不可用
+- 视频直链先 `download_stream` 流式下，失败再 yt-dlp；yt-dlp 页面兜底与 Playwright 图文兜底保留
+- 周检改为 feed API 现取在线 ID → `fetch_from_share_page` 真实走解析
+- 删除 `DOUYIN_MCP` 常量；README 去掉 douyin-mcp-server 安装步骤
+
+**验证：** `py_compile` 通过；解析逻辑与 vps 精简版同源，精简版已实测视频解析+下载成功；
+**bot.py 本身未重启实测，重启后发一条抖音视频 + 一条图文确认。**
+
+**回滚：** `git revert` 本次提交（vps/douyin.py 需保留，bot.py 回滚后仍依赖 douyin-mcp-server）。
+
 ## [2026-10-31] VPS 精简版 `vps/`
 
 ### 新增

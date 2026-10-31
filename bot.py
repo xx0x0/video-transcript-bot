@@ -11,7 +11,6 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 BADNEWS_COOKIES = os.environ.get("BADNEWS_COOKIES", "")
 
 SAVE_DIR = os.path.expanduser("~/Downloads/抖音")
-DOUYIN_MCP = os.path.expanduser("~/douyin-mcp-server")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ---- Pyrogram（MTProto）大文件发送：Bot API 上传上限 50MB，配了 api_id/hash 走 ----
@@ -59,8 +58,10 @@ VIDEO_ONLY = (
     "instagram.com", "kuaishou.com", "xiaohongshu.com", "xhslink.com",
 )
 
-sys.path.insert(0, DOUYIN_MCP)
-from douyin_mcp_server.server import get_douyin_download_link
+# 抖音解析与 vps/ 精简版共用同一份 douyin.py：
+# 移动端 feed API 已不认 aweme_id（2026-10-31 实测返回随机推荐流），改抓 iesdouyin 分享页内嵌数据
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vps"))
+import douyin as douyin_api
 
 # X 已删光 data-testid（2026-08 实测），旧的按 testid 隐藏弹窗的 CSS 失配；
 # 改按 fixed/sticky 定位 + 关键词清除 cookie 同意弹窗、登录/注册悬浮条。
@@ -1240,14 +1241,14 @@ def douyin_note_gallery(url):
 async def _handle_xiaohongshu_note(msg, clean_url: str):
     """小红书图文帖处理"""
     await msg.reply_text("⏳ 处理中，请稍候...")
-    info = None
+    item = None
     for _attempt in range(3):
         try:
-            result = get_douyin_download_link(clean_url)
-            info = json.loads(result)
-            if info.get("status") != "error":
-                break
-            print(f"[抖音图文提取重试 {_attempt+1}/3] {info.get('error')}")
+            item = await asyncio.to_thread(douyin_api.fetch_item, clean_url)
+            break
+        except douyin_api.DouyinUnavailable as e:
+            await msg.reply_text(f"❌ {e}\n🔗 {clean_url}")
+            return
         except Exception as e:
             print(f"[抖音图文提取重试 {_attempt+1}/3] {e}")
         if _attempt < 2:
@@ -1255,11 +1256,11 @@ async def _handle_xiaohongshu_note(msg, clean_url: str):
     try:
         title = ""
         images = []
-        if info is not None and info.get("status") != "error":
-            title = info.get("title", "")
-            images = info.get("images", [])
+        if item is not None:
+            title = item.title
+            images = list(item.images)
         if not images:
-            print("[图文 MCP 无图片，playwright 兜底]")
+            print("[图文分享页无图片，playwright 兜底]")
             try:
                 loop = asyncio.get_event_loop()
                 pw_title, images = await loop.run_in_executor(None, douyin_note_gallery, clean_url)
@@ -1361,20 +1362,24 @@ async def _handle_douyin(msg, clean_url: str, video_path: str):
     _ytdlp_fallback = False
     for _attempt in range(3):
         try:
-            result = get_douyin_download_link(clean_url)
-            info = json.loads(result)
-            video_url = info.get("video_url") or info.get("download_url") or info.get("url", "")
-            title = info.get("title") or info.get("desc", "")
+            item = await asyncio.to_thread(douyin_api.fetch_item, clean_url)
+            title = item.title
+            if item.kind == "images":
+                # /video/ 链接分享的图文帖，转图文流程
+                await _handle_xiaohongshu_note(msg, clean_url)
+                return False, title
+            video_url = item.video_url
             if video_url:
                 break
-            err_detail = info.get("error", "")
-            print(f"[抖音提取重试 {_attempt+1}/3] 无视频链接 mcp={err_detail or info.get('status', '?')}")
+        except douyin_api.DouyinUnavailable as e:
+            await msg.reply_text(f"❌ {e}\n🔗 {clean_url}")
+            return False, title
         except Exception as e:
             print(f"[抖音提取重试 {_attempt+1}/3] {e}")
         if _attempt < 2:
             await asyncio.sleep(2 * (_attempt + 1))
         elif not video_url:
-            print("[抖音 MCP 全部失败，尝试 yt-dlp 兜底]")
+            print("[抖音分享页全部失败，尝试 yt-dlp 兜底]")
             douyin_cookies = os.path.expanduser("~/douyin-cookies.txt")
             douyin_cookie_args = ["--cookies", douyin_cookies] if os.path.exists(douyin_cookies) else []
             dl_fb = await _run_subprocess(
@@ -1390,14 +1395,17 @@ async def _handle_douyin(msg, clean_url: str, video_path: str):
         await _process_article(msg, clean_url)
         return False, title
     if not _ytdlp_fallback:
-        dl = await _run_subprocess(
-            "yt-dlp", "--no-playlist", "-o", video_path, video_url
-        )
-        if dl.returncode != 0 or not os.path.exists(video_path):
-            if os.path.exists(video_path):
-                os.remove(video_path)
-            await msg.reply_text(f"❌ 抖音视频下载失败：{dl.stderr[-300:] if dl.stderr else 'unknown'}")
-            return False, title
+        # 直链先用 requests 流式下（实测可用），失败再让 yt-dlp 试
+        ok = await asyncio.to_thread(douyin_api.download_stream, video_url, video_path)
+        if not ok:
+            dl = await _run_subprocess(
+                "yt-dlp", "--no-playlist", "-o", video_path, video_url
+            )
+            if dl.returncode != 0 or not os.path.exists(video_path):
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+                await msg.reply_text(f"❌ 抖音视频下载失败：{dl.stderr[-300:] if dl.stderr else 'unknown'}")
+                return False, title
     if os.path.getsize(video_path) == 0:
         os.remove(video_path)
         await msg.reply_text("❌ CDN 返回空文件，请稍后重试")
@@ -1572,23 +1580,16 @@ app = ApplicationBuilder().token(BOT_TOKEN).read_timeout(300).write_timeout(600)
 app.add_handler(MessageHandler(filters.TEXT, handle))
 
 # 每7天检测一次抖音解析链路是否还有效
-_PROBE_VIDEO_ID = "7380153036879249699"  # 公开视频，只用来探针
+_PROBE_VIDEO_ID = "7700146181942414642"  # 兜底探针（2026-10-31 在线）；正常由 feed API 现取
 
 async def _health_check_douyin(context: ContextTypes.DEFAULT_TYPE):
+    """feed API 现取一个在线视频 ID，再走正式解析路径（分享页）确认能拿到直链。"""
     if not BOT_OWNER:
         return
     try:
-        resp = requests.get(
-            "https://aweme.snssdk.com/aweme/v1/feed/",
-            params={"aweme_id": _PROBE_VIDEO_ID},
-            headers={"User-Agent": "com.ss.android.ugc.aweme/110101 (Linux; U; Android 10; zh_CN; Pixel 4; Build/QQ3A.200805.001; Cronet/58.0.2991.0)"},
-            timeout=15,
-        )
-        aweme_list = resp.json().get("aweme_list", [])
-        if aweme_list:
-            await context.bot.send_message(chat_id=BOT_OWNER, text="✅ [周检] 抖音解析链路正常")
-        else:
-            await context.bot.send_message(chat_id=BOT_OWNER, text="⚠️ [周检] 抖音移动端 API 返回空列表，解析链路可能已失效，请排查")
+        probe_id = await asyncio.to_thread(douyin_api.fetch_live_probe_id) or _PROBE_VIDEO_ID
+        item = await asyncio.to_thread(douyin_api.fetch_from_share_page, probe_id)
+        await context.bot.send_message(chat_id=BOT_OWNER, text=f"✅ [周检] 抖音解析链路正常（{item.kind} {probe_id}）")
     except Exception as e:
         await context.bot.send_message(chat_id=BOT_OWNER, text=f"❌ [周检] 抖音解析链路异常：{e}")
 
