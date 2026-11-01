@@ -11,7 +11,7 @@
 
 VPS 没有显示器：X 的有头浏览器兜底自动退回 headless（`DISPLAY` 为空时）。X 正常路径是 FxTwitter + 本地渲染卡片，不受影响。
 
-不支持：**微信视频号**（`weixin.qq.com/sph/...` / `channels.weixin.qq.com`）。微信外的预览接口只给封面+文案+作者，没有视频地址，yt-dlp 也没有提取器；截图开着时只会截到预览页（封面+文案+"前往微信"）。
+不支持：**微信视频号**（`weixin.qq.com/sph/...` / `channels.weixin.qq.com`）。微信外的预览接口只给封面+文案+作者，没有视频地址，yt-dlp 也没有提取器；bot 直接回「不支持」提示。
 
 ## 部署（Ubuntu / Debian）
 

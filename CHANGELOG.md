@@ -2,6 +2,10 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-11-01] 视频号链接直接回「不支持」
+
+`handle()` 在平台判定前拦截 `weixin.qq.com/sph/` 与 `channels.weixin.qq.com`，回复不支持提示（含手动下载方法）后返回，不再走文章截图。本地与 VPS 同一份代码。
+
 ## [2026-11-01] VPS 截图全开 + 微信视频号确认不支持
 
 **起因：** VPS 上发视频号链接 `weixin.qq.com/sph/AVKPXNSX8f`，回复「内容提取失败（该链接需要网页截图，ENABLE_SCREENSHOT 已关闭）」。用户要求 VPS 截图全开，并指出该链接是视频不是文章。

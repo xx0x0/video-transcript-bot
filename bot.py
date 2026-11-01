@@ -570,6 +570,16 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     text = url_match.group(0).rstrip(".,)")
 
+    # 微信视频号：视频地址和解密 key 只下发给微信客户端，网页预览接口只有封面/文案，
+    # yt-dlp 也无提取器，微信外下不了（2026-11-01 实测）。直接回不支持，不走截图
+    if re.search(r"weixin\.qq\.com/sph/|channels\.weixin\.qq\.com", text):
+        await msg.reply_text(
+            "❌ 不支持微信视频号：微信外拿不到视频地址。"
+            "要下载请在电脑微信里播放 + res-downloader 抓包，下好的 mp4 可直接发群\n"
+            f"🔗 {text}"
+        )
+        return
+
     # 已知视频平台直接走视频流程
     is_known_platform = any(x in text for x in PLATFORMS)
 

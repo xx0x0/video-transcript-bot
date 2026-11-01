@@ -238,7 +238,7 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 
 ### 2026-11-01
 - 🔧 **VPS 截图全开** — `vps/install.sh` 改为装 Playwright + Chromium（放仓库内 `.pw-browsers/`）+ 中文字体，生成的 `.env` 里 `ENABLE_SCREENSHOT="1"`；bot.py 在没有 `DISPLAY` 的 Linux 上把 X 的有头浏览器兜底自动退回 headless。已部署机器：`git pull` → `sudo bash vps/install.sh` → `.env` 改 `ENABLE_SCREENSHOT="1"` → `daemon-reload` + restart
-- ℹ️ **微信视频号不支持** — `weixin.qq.com/sph/...` 预览接口在微信外没有视频地址，yt-dlp 也没有提取器，截图只能截到预览页（封面+文案）
+- ℹ️ **微信视频号不支持** — `weixin.qq.com/sph/...` 预览接口在微信外没有视频地址，yt-dlp 也没有提取器；bot 收到视频号链接直接回「不支持」提示，不截图
 
 ### 2026-10-31
 - 🔧 **默认只有抖音转文案（定稿）** — 其他平台（X / Instagram / 小红书 / B站 / YouTube 等）默认一律不跑 Whisper，只发 视频+标题/原文+链接，也不归档 pkb；要转录加 `/text` 口令强制
