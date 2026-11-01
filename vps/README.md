@@ -11,7 +11,7 @@
 
 VPS 没有显示器：X 的有头浏览器兜底自动退回 headless（`DISPLAY` 为空时）。X 正常路径是 FxTwitter + 本地渲染卡片，不受影响。
 
-**微信视频号**（`weixin.qq.com/sph/...` / `channels.weixin.qq.com`）：微信外拿不到视频地址，走第三方上游 anyfetcher.com 解析（`weixin_channels.py`，不需要浏览器）。上游匿名额度很低（实测一个 IP 一天 2 次左右），用完或上游失效时 bot 回「视频号上游失效：<原因>」。
+**微信视频号**（`weixin.qq.com/sph/...` / `channels.weixin.qq.com`）：微信外拿不到视频地址，走第三方上游（`weixin_channels.py`，不需要浏览器）：`.env` 配了 `SNAPANY_API_KEY` 先走 snapany 官方 API（1 积分/条，新号送 50，9000 积分 ¥69，Key 在 platform.snapany.com/zh/console/keys），失败切免费的 anyfetcher（匿名约 2 次/天/IP）。全失败时 bot 回「视频号上游失效」并列出各家原因。
 
 ## 部署（Ubuntu / Debian）
 

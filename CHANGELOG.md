@@ -2,6 +2,23 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-11-01] 视频号双上游：snapany 官方 API + anyfetcher 轮换
+
+**起因：** anyfetcher 匿名额度约 2 次/天/IP，用户要求两个上游换着切。anyfetcher 接口返回 `source: snapany`，snapany 才是真实源。
+
+**为什么不抓 snapany 网页接口：** 它的网页接口带 HMAC 签名头（防脚本），复现签名调用属于绕过防护，不做。
+snapany 有官方 OpenAPI（platform.snapany.com）：`POST https://api.snapany.com/openapi/v1/extract/post {"url"}`，
+`Authorization: Bearer sk_snapany_xxx`，1 积分/条成功才扣，新号送 50 积分，9000 积分 ¥69。响应 `medias[].{media_type, resource_url, headers}` + `title`/`text`。
+
+**改动（weixin_channels.py 重写）：**
+- `upstreams()`：`.env` 有 `SNAPANY_API_KEY` 则 [snapany, anyfetcher]，否则只有 anyfetcher；`fetch_channels_video` 逐个试，任一解析成功即下载，全失败抛 `UpstreamError` 列出每家原因（没 key 时附提示）
+- snapany 错误映射：401 Key 无效 / 402 积分用完 / 400 带 code（unsupported_site 等，不扣费）/ 其他 HTTP；下载时原样带上游给的 `headers`
+- anyfetcher 去掉 Referer 头，只保留 UA
+- `.env.example` 加 `SNAPANY_API_KEY=""`；VPS 的 `.env` 手动加一行即可（systemd EnvironmentFile 直接读）
+
+**验证：** 离线 mock 测试切换顺序、fallback、全失败汇总均通过。snapany 官方 API 对视频号链接是否支持**未实测**（没有 key；网页版同一后端支持 weixin）。
+本会话误耗 anyfetcher 当日额度 3 次（抓包 1 + 复核 1 + 假 ID 测错误 1，第 3 次多余）。
+
 ## [2026-11-01] 微信视频号走 anyfetcher 上游下载（替代「不支持」提示）
 
 **决策：** 用户发现 anyfetcher.com 能解视频号，拍板把它当上游，失效就提示上游失效。
