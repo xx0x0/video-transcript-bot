@@ -2,9 +2,22 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
-## [2026-11-01] 视频号链接直接回「不支持」
+## [2026-11-01] 微信视频号走 anyfetcher 上游下载（替代「不支持」提示）
 
-`handle()` 在平台判定前拦截 `weixin.qq.com/sph/` 与 `channels.weixin.qq.com`，回复不支持提示（含手动下载方法）后返回，不再走文章截图。本地与 VPS 同一份代码。
+**决策：** 用户发现 anyfetcher.com 能解视频号，拍板把它当上游，失效就提示上游失效。
+
+**原理：** 视频号视频地址只下发给微信登录态；anyfetcher 服务端自己持有微信会话，公开接口
+`POST https://anyfetcher.com/api/video/parse {"url": 分享链接}` 返回 `medias[].resource_url`（finder.video.qq.com 的明文 mp4，实测 720p h264/aac，curl 直下可播）。
+
+**改动：**
+- 新增 `weixin_channels.py`：`is_channels_url` / `normalize_url`（channels.weixin.qq.com/...?id=X → weixin.qq.com/sph/X）/ `fetch_channels_video(url, dest) -> title`；
+  失败统一抛 `UpstreamError`，文案区分：连不上 / 429 今日额度用完 / 非 200 / 非 JSON / 无视频 / 下载失败 / 下到的不是 mp4（开头无 `ftyp`，说明微信改加密上游没跟上）
+- bot.py：`PLATFORMS` 加 `weixin.qq.com/sph`、`channels.weixin.qq.com`；`_process` 新增 `is_wx_channels` 分支调 `_handle_weixin_channels`，成功后与其他平台一样发视频+标题+链接（不转文案）；失败回「❌ 视频号上游失效：<原因>」。上一版的「不支持」拦截已删
+- 同一份代码本地 / VPS 通用，不依赖 Playwright
+
+**已知限制（实测）：** anyfetcher 匿名额度很低，同一 IP 当日第 3 次解析即 429 `DAILY_LIMIT_EXCEEDED`。VPS 自己的 IP 独立计数。上游随时可能关站或改接口。
+
+**验证：** 成功路径用本机 requests 调接口 + curl 下 resource_url + ffprobe 核对（16.5MB，373s）；429 路径用 `fetch_channels_video` 实跑命中。运行态未验证（bot 由用户重启）。
 
 ## [2026-11-01] VPS 截图全开 + 微信视频号确认不支持
 

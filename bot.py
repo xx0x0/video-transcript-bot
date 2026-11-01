@@ -65,6 +65,7 @@ PLATFORMS = [
     "xhslink.com", "twitter.com", "x.com", "youtube.com", "youtu.be",
     "instagram.com", "weibo.com", "bilibili.com", "b23.tv", "kuaishou.com",
     "news.qq.com", "view.inews.qq.com", "bad.news", "github.com",
+    "weixin.qq.com/sph", "channels.weixin.qq.com",  # 微信视频号（走 anyfetcher 上游，见 weixin_channels.py）
 ]
 VIDEO_ONLY = (
     "youtube.com", "youtu.be", "bilibili.com", "b23.tv",
@@ -73,6 +74,7 @@ VIDEO_ONLY = (
 
 # 抖音解析：移动端 feed API 已不认 aweme_id（2026-10-31 实测返回随机推荐流），改抓 iesdouyin 分享页内嵌数据
 import douyin as douyin_api
+import weixin_channels
 
 # X 已删光 data-testid（2026-08 实测），旧的按 testid 隐藏弹窗的 CSS 失配；
 # 改按 fixed/sticky 定位 + 关键词清除 cookie 同意弹窗、登录/注册悬浮条。
@@ -569,16 +571,6 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not url_match:
         return
     text = url_match.group(0).rstrip(".,)")
-
-    # 微信视频号：视频地址和解密 key 只下发给微信客户端，网页预览接口只有封面/文案，
-    # yt-dlp 也无提取器，微信外下不了（2026-11-01 实测）。直接回不支持，不走截图
-    if re.search(r"weixin\.qq\.com/sph/|channels\.weixin\.qq\.com", text):
-        await msg.reply_text(
-            "❌ 不支持微信视频号：微信外拿不到视频地址。"
-            "要下载请在电脑微信里播放 + res-downloader 抓包，下好的 mp4 可直接发群\n"
-            f"🔗 {text}"
-        )
-        return
 
     # 已知视频平台直接走视频流程
     is_known_platform = any(x in text for x in PLATFORMS)
@@ -1412,6 +1404,18 @@ async def _handle_badnews(msg, clean_url: str, video_path: str) -> bool:
         return False
 
 
+async def _handle_weixin_channels(msg, clean_url: str, video_path: str):
+    """微信视频号：走 anyfetcher 上游解析+下载。成功返回 (True, 标题)；失败已回复"上游失效"返回 (False, "")"""
+    loop = asyncio.get_event_loop()
+    try:
+        title = await loop.run_in_executor(None, weixin_channels.fetch_channels_video, clean_url, video_path)
+        return True, title
+    except weixin_channels.UpstreamError as e:
+        print(f"[weixin_channels upstream] {e}")
+        await msg.reply_text(f"❌ 视频号上游失效：{e}\n🔗 {clean_url}")
+        return False, ""
+
+
 async def _handle_douyin(msg, clean_url: str, video_path: str):
     """抖音视频下载，返回 (success: bool, title: str)"""
     video_url = ""
@@ -1526,8 +1530,14 @@ async def _process(msg, clean_url: str, mode: str = "default"):
     is_douyin = any(x in clean_url for x in ["douyin.com", "v.douyin.com", "tiktok.com"])
     is_badnews = "bad.news" in clean_url
     is_qqnews = any(x in clean_url for x in ["news.qq.com", "view.inews.qq.com"])
+    is_wx_channels = weixin_channels.is_channels_url(clean_url)
 
-    if is_qqnews:
+    if is_wx_channels:
+        ok, title = await _handle_weixin_channels(msg, clean_url, video_path)
+        if not ok:
+            return
+
+    elif is_qqnews:
         if not await _handle_qqnews(msg, clean_url, video_path):
             return
         try:
