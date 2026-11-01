@@ -6,7 +6,7 @@ A Telegram bot that extracts transcripts from short-form video (Douyin, X/Twitte
 
 ---
 
-> **部署到 VPS / 不要转录和截图**：`.env` 里 `ENABLE_TRANSCRIBE=0`、`ENABLE_SCREENSHOT=0`，不装 Whisper/Ollama/Playwright 也能跑，只下载视频/图片 + 标题/推文原文。一键 systemd 部署看 [`vps/README.md`](vps/README.md)。
+> **部署到 VPS / 不要转录**：`.env` 里 `ENABLE_TRANSCRIBE=0`，不装 Whisper/Ollama 也能跑（截图 `ENABLE_SCREENSHOT` 默认开，install.sh 会装 Chromium；填 0 则连 Playwright 也不用装）。一键 systemd 部署看 [`vps/README.md`](vps/README.md)。
 
 ## 🚀 快速启动
 
@@ -235,6 +235,10 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ---
 
 ## 📜 更新日志
+
+### 2026-11-01
+- 🔧 **VPS 截图全开** — `vps/install.sh` 改为装 Playwright + Chromium（放仓库内 `.pw-browsers/`）+ 中文字体，生成的 `.env` 里 `ENABLE_SCREENSHOT="1"`；bot.py 在没有 `DISPLAY` 的 Linux 上把 X 的有头浏览器兜底自动退回 headless。已部署机器：`git pull` → `sudo bash vps/install.sh` → `.env` 改 `ENABLE_SCREENSHOT="1"` → `daemon-reload` + restart
+- ℹ️ **微信视频号不支持** — `weixin.qq.com/sph/...` 预览接口在微信外没有视频地址，yt-dlp 也没有提取器，截图只能截到预览页（封面+文案）
 
 ### 2026-10-31
 - 🔧 **默认只有抖音转文案（定稿）** — 其他平台（X / Instagram / 小红书 / B站 / YouTube 等）默认一律不跑 Whisper，只发 视频+标题/原文+链接，也不归档 pkb；要转录加 `/text` 口令强制

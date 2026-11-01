@@ -2,6 +2,22 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-11-01] VPS 截图全开 + 微信视频号确认不支持
+
+**起因：** VPS 上发视频号链接 `weixin.qq.com/sph/AVKPXNSX8f`，回复「内容提取失败（该链接需要网页截图，ENABLE_SCREENSHOT 已关闭）」。用户要求 VPS 截图全开，并指出该链接是视频不是文章。
+
+**视频号调查结论（不支持）：** 短链落到 `channels.weixin.qq.com/finder-preview/pages/sph?id=...`，页面只调 `finder-preview/api/feed/get_feed_info`，
+返回封面 / 文案 / 作者 / 点赞数，**没有视频地址**，页面本身显示「可前往微信观看此内容」；yt-dlp 2026.08.19 没有视频号提取器。
+微信外拿不到视频，不是开关问题。截图开着时该链接走文章路径，只能截到预览页。
+
+**改动：**
+- `vps/requirements.txt` 加 `playwright`；`vps/install.sh` 装 `fonts-noto-cjk`（中文截图不装全是方块）、`playwright install-deps chromium`、`playwright install chromium`（`PLAYWRIGHT_BROWSERS_PATH` 固定到仓库内 `.pw-browsers/`，不依赖运行用户的 `~/.cache`），生成 `.env` 时 `ENABLE_SCREENSHOT="1"`
+- `vps/douyin-bot.service` 加 `Environment=PLAYWRIGHT_BROWSERS_PATH`；`run.sh` 发现 `.pw-browsers/` 时同样导出；`.gitignore` 加 `.pw-browsers/`、`.venv/`
+- `bot.py` 新增 `_HEADED_OK`（macOS 或有 `DISPLAY`）：X 的有头浏览器兜底在无显示器的 Linux 上退回 headless，否则 Chromium 直接报 Missing X server。X 正常路径（FxTwitter + x_card 本地渲染）不受影响
+- 以 root 跑 systemd 不用额外加 `--no-sandbox`：Playwright `chromiumSandbox` 默认关
+
+**已部署 VPS 升级步骤：** `git pull` → `sudo bash vps/install.sh`（.env 已存在不会覆盖）→ `.env` 手改 `ENABLE_SCREENSHOT="1"` → `sudo systemctl daemon-reload && sudo systemctl restart douyin-bot`。
+
 ## [2026-10-31] 默认只有抖音转文案，其他平台一律不转（用户定稿）
 
 **决策：** 用户拍板：默认模式只转抖音，其他平台（X / Instagram / 小红书 / B站 / YouTube 等）一律不转文案。

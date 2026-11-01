@@ -10,6 +10,8 @@ WorkingDirectory=__APP_DIR__
 EnvironmentFile=__APP_DIR__/.env
 # bot 用裸名调 yt-dlp（装在 .venv/bin），systemd 默认 PATH 不含该目录
 Environment=PATH=__APP_DIR__/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# Playwright 的 Chromium 由 install.sh 装在仓库内（不放 ~/.cache，和运行用户无关）
+Environment=PLAYWRIGHT_BROWSERS_PATH=__APP_DIR__/.pw-browsers
 ExecStart=__APP_DIR__/.venv/bin/python __APP_DIR__/bot.py
 Restart=always
 RestartSec=10

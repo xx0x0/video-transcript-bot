@@ -10,3 +10,5 @@ x-cookies.txt
 *.session
 *.session-journal
 .DS_Store
+.pw-browsers/
+.venv/

@@ -5,3 +5,5 @@ yt-dlp>=2026.8.19
 # 大文件发送（>50MB 走 MTProto）。用 kurigram 不要用官方 pyrogram（已停更，新群 ID 报 Peer id invalid）
 kurigram>=2.2.26
 tgcrypto>=1.2.5
+# 网页截图（ENABLE_SCREENSHOT=1）。浏览器本体由 install.sh 的 playwright install 下载到 .pw-browsers/
+playwright>=1.47

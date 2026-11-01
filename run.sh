@@ -14,6 +14,8 @@ source .env
 set +a
 
 if [ -x .venv/bin/python ]; then
+    # VPS：Chromium 由 vps/install.sh 装在仓库内 .pw-browsers/
+    [ -d .pw-browsers ] && export PLAYWRIGHT_BROWSERS_PATH="$PWD/.pw-browsers"
     exec .venv/bin/python bot.py
 fi
 exec /opt/homebrew/bin/python3.11 bot.py

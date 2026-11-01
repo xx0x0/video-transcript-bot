@@ -4,7 +4,7 @@ from telegram import Update, InputMediaPhoto
 from telegram.error import NetworkError, TimedOut, BadRequest
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from PIL import Image
-# playwright 按需在函数内 import：ENABLE_SCREENSHOT=0 的机器（VPS）不用装
+# playwright 按需在函数内 import：ENABLE_SCREENSHOT=0 的机器不用装
 
 # 从环境变量读取（由 run.sh 加载 .env 注入）
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -17,11 +17,14 @@ DOUYIN_COOKIES = os.path.expanduser(os.environ.get("DOUYIN_COOKIES") or "~/douyi
 
 # ---- 功能开关（.env 里填 0 关闭；默认全开）----
 # ENABLE_TRANSCRIBE=0：不跑 Whisper 转文案、不调 Ollama 梳理，只发视频+标题/原文（VPS 不装模型）
-# ENABLE_SCREENSHOT=0：不开 Playwright，文章链接只发文字+图，不支持腾讯新闻视频、抖音图文无浏览器兜底
+# ENABLE_SCREENSHOT=0：不开 Playwright，文章链接只发文字+图，不支持腾讯新闻视频、抖音图文无浏览器兜底（VPS 默认开）
 def _flag(name: str) -> bool:
     return os.environ.get(name, "1").strip().lower() not in ("0", "false", "no", "off")
 ENABLE_TRANSCRIBE = _flag("ENABLE_TRANSCRIBE")
 ENABLE_SCREENSHOT = _flag("ENABLE_SCREENSHOT")
+# X 走有头浏览器（headless 被 x.com 封），但 Linux VPS 没有显示器，有头启动会直接报错；
+# 没 DISPLAY 就退回 headless（X 正常路径是 FxTwitter + 本地渲染卡片，这里只是兜底）
+_HEADED_OK = sys.platform == "darwin" or bool(os.environ.get("DISPLAY"))
 
 # ---- Pyrogram（MTProto）大文件发送：Bot API 上传上限 50MB，配了 api_id/hash 走 ----
 # Pyrogram 用同一个 bot_token，上限提到 2GB，>50MB 的视频改用它发，<=50MB 仍走原库
@@ -97,9 +100,10 @@ def webpage_screenshot(url, save_path_prefix, max_segments=8):
 
     with sync_playwright() as p:
         # X 对 headless 浏览器一律返回 403 空白页（2026-08 起），X 改走有头模式，窗口移到屏幕外
+        headed = is_x and _HEADED_OK
         browser = p.chromium.launch(
-            headless=not is_x,
-            args=["--window-position=-32000,-32000"] if is_x else [],
+            headless=not headed,
+            args=["--window-position=-32000,-32000"] if headed else [],
         )
         # X 用窄视口触发响应式布局，侧栏不渲染；其他站点保持宽视口
         vp_width = 700 if is_x else 1200
@@ -667,9 +671,10 @@ def extract_page_content(url, save_path_prefix):
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         # X 对 headless 浏览器一律返回 403 空白页（2026-08 起），X 改走有头模式，窗口移到屏幕外
+        headed = is_x and _HEADED_OK
         browser = p.chromium.launch(
-            headless=not is_x,
-            args=["--window-position=-32000,-32000"] if is_x else [],
+            headless=not headed,
+            args=["--window-position=-32000,-32000"] if headed else [],
         )
         vp_width = 700 if is_x else 1200
         context = browser.new_context(
