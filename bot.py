@@ -65,7 +65,8 @@ PLATFORMS = [
     "xhslink.com", "twitter.com", "x.com", "youtube.com", "youtu.be",
     "instagram.com", "weibo.com", "bilibili.com", "b23.tv", "kuaishou.com",
     "news.qq.com", "view.inews.qq.com", "bad.news", "github.com",
-    "weixin.qq.com/sph", "channels.weixin.qq.com",  # 微信视频号（走 anyfetcher 上游，见 weixin_channels.py）
+    "weixin.qq.com/sph", "channels.weixin.qq.com",  # 微信视频号（走第三方上游，见 weixin_channels.py）
+    "finder.video.qq.com",  # 视频号临时直链（用户在 snapany 网页解析后复制来的），直接下载
 ]
 VIDEO_ONLY = (
     "youtube.com", "youtu.be", "bilibili.com", "b23.tv",

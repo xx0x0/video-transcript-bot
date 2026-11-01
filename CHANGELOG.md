@@ -2,6 +2,14 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-11-01] 视频号直链：finder.video.qq.com 地址直接下载
+
+**起因：** 用户不注册 snapany。snapany 网页人工用免费，但 bot 调它要过防脚本签名，不绕。
+折中：用户自己在 snapany 网页解析后把 `finder.video.qq.com/.../stodownload?...` 临时地址发给 bot，bot 直接下载发视频，不经上游、不占额度。
+
+**改动：** `weixin_channels.is_direct_video_url`，`fetch_channels_video` 遇直链跳过上游直接 `_download`（标题为空）；bot.py `PLATFORMS` 加 `finder.video.qq.com`。
+**验证：** 用用户贴来的直链实跑，下到 16.5MB，ffprobe h264/aac 720x1280 373s。直链几小时过期，过期回「视频地址下载失败 HTTP 4xx」。
+
 ## [2026-11-01] 视频号双上游：snapany 官方 API + anyfetcher 轮换
 
 **起因：** anyfetcher 匿名额度约 2 次/天/IP，用户要求两个上游换着切。anyfetcher 接口返回 `source: snapany`，snapany 才是真实源。

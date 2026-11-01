@@ -239,7 +239,7 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 
 ### 2026-11-01
 - 🔧 **VPS 截图全开** — `vps/install.sh` 改为装 Playwright + Chromium（放仓库内 `.pw-browsers/`）+ 中文字体，生成的 `.env` 里 `ENABLE_SCREENSHOT="1"`；bot.py 在没有 `DISPLAY` 的 Linux 上把 X 的有头浏览器兜底自动退回 headless。已部署机器：`git pull` → `sudo bash vps/install.sh` → `.env` 改 `ENABLE_SCREENSHOT="1"` → `daemon-reload` + restart
-- 🆕 **微信视频号下载（双上游轮换）** — 微信外拿不到视频地址，`weixin_channels.py` 走 snapany 官方 API（`.env` 配 `SNAPANY_API_KEY`，1 积分/条）→ 失败切免费的 anyfetcher（匿名约 2 次/天/IP），解析后直下 mp4 发视频+标题+链接；全失败回「视频号上游失效」并列出各家原因
+- 🆕 **微信视频号下载（双上游轮换）** — 微信外拿不到视频地址，`weixin_channels.py` 走 snapany 官方 API（`.env` 配 `SNAPANY_API_KEY`，1 积分/条）→ 失败切免费的 anyfetcher（匿名约 2 次/天/IP），解析后直下 mp4 发视频+标题+链接；全失败回「视频号上游失效」并列出各家原因；也可自己在 snapany 网页解析后把 `finder.video.qq.com` 直链发给 bot，直接下载不占额度
 
 ### 2026-10-31
 - 🔧 **默认只有抖音转文案（定稿）** — 其他平台（X / Instagram / 小红书 / B站 / YouTube 等）默认一律不跑 Whisper，只发 视频+标题/原文+链接，也不归档 pkb；要转录加 `/text` 口令强制

@@ -15,6 +15,7 @@ yt-dlp 也没有提取器。这两家服务端自己持有微信会话，返回 
     → {"title": ..., "medias": [...同上]}；429 DAILY_LIMIT_EXCEEDED=当日额度用完
 
 有 key 先走 snapany，失败切 anyfetcher；没 key 只有 anyfetcher。全失败抛 UpstreamError，消息列出各家原因。
+直链：用户自己在 snapany 网页解析后复制的 finder.video.qq.com 地址，发给 bot 直接下载，不走上游不占额度。
 """
 import os
 import re
@@ -31,7 +32,13 @@ class UpstreamError(Exception):
 
 
 def is_channels_url(url: str) -> bool:
-    return bool(re.search(r"weixin\.qq\.com/sph/|channels\.weixin\.qq\.com", url))
+    return bool(re.search(r"weixin\.qq\.com/sph/|channels\.weixin\.qq\.com|finder\.video\.qq\.com", url))
+
+
+def is_direct_video_url(url: str) -> bool:
+    """finder.video.qq.com/.../stodownload?...：用户自己在 snapany 等网页解析出来的临时 mp4 地址（带 token/sign，几小时过期），
+    直接下载不经任何上游、不占额度"""
+    return "finder.video.qq.com" in url
 
 
 def normalize_url(url: str) -> str:
@@ -115,6 +122,10 @@ def _download(video_url: str, extra_headers: dict, dest: str) -> None:
 
 def fetch_channels_video(url: str, dest: str) -> str:
     """依次试每个上游解析，拿到地址就下载到 dest，返回标题；全失败抛 UpstreamError 列出各家原因。"""
+    if is_direct_video_url(url):
+        print("[weixin_channels] 直链，跳过上游直接下载")
+        _download(url, {}, dest)
+        return ""
     share_url = normalize_url(url)
     failures = []
     for name, parse in upstreams():
