@@ -3,12 +3,12 @@
 页面 www.xiaohongshu.com 与 www.rednote.com 是同一套前端，笔记数据内嵌在 window.__INITIAL_STATE__
 （note.noteDetailMap[id].note），yt-dlp 的 XiaoHongShu 提取器也是读这个，但只认 xiaohongshu.com 且只处理视频。
 
-登录态（2026-11-17 实测）：页面 guestBrowsePolicy 只放行 sources ["seo","direct"]，
-App 分享出的 xhslink 短链（xsec_source=app_share）不登录能看；浏览器搜索流复制的链接
-（xsec_source=pc_search）游客直接被甩到 /login，必须带登录 cookie。
-cookie 文件 XHS_COOKIES（默认 ~/xhs-cookies.txt，Netscape 格式，用 "Get cookies.txt LOCALLY" 扩展在
-已登录的 rednote.com / xiaohongshu.com 导出）。cookie 只对导出时的域名有效，所以不改写域名，
-按用户发来的域名请求；撞登录墙再换另一个域名试一次（cookie 文件里可能是另一边的）。
+游客访问（2026-11-17 实测）：裸 HTTP 请求（无 cookie）会被 302 到 /login，但无头 Chromium 不登录就能打开笔记页，
+因为游客 cookie（a1 / webId / web_session / websectiga ...）是页面 JS 生成的，requests 拿不到。
+所以顺序：先 requests（最快，App 分享的 xhslink 链接能直接过）→ 撞登录墙换 Playwright 无头浏览器加载再读
+window.__INITIAL_STATE__（VPS 装了截图依赖就有）。都拿不到才抛 NeedLogin。
+可选 XHS_COOKIES（默认 ~/xhs-cookies.txt，Netscape 格式）：有就带上，给只对登录用户可见的内容用；正常不需要。
+cookie 只对导出时的域名有效，所以不改写域名，按用户发来的域名请求；撞登录墙再换另一个域名试一次。
 """
 import http.cookiejar
 import json
@@ -21,8 +21,21 @@ import requests
 XHS_COOKIES = os.path.expanduser(os.environ.get("XHS_COOKIES") or "~/xhs-cookies.txt")
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 PAGE_TIMEOUT = 20
+BROWSER_TIMEOUT_MS = 30000
+BROWSER_SETTLE_MS = 3000
 DOWNLOAD_TIMEOUT = 300
 _HOSTS = ("xiaohongshu.com", "rednote.com", "xhslink.com")
+_NOTE_ID_RE = re.compile(r"/(?:explore|discovery/item|item)/([0-9a-f]{24})")
+# 浏览器里直接取 noteDetailMap[id].note，避免把整个 state 序列化回来
+_JS_PICK_NOTE = """(id) => {
+  const s = window.__INITIAL_STATE__ || {};
+  const m = (s.note && s.note.noteDetailMap) || {};
+  const n = (m[id] && m[id].note) || null;
+  if (!n) return null;
+  return {type: n.type, title: n.title, desc: n.desc,
+          imageList: (n.imageList || []).map(i => ({urlDefault: i.urlDefault})),
+          video: {media: {stream: ((n.video || {}).media || {}).stream || {}}}};
+}"""
 
 
 class NeedLogin(Exception):
@@ -68,11 +81,15 @@ def _parse_initial_state(html: str) -> dict:
     return json.loads(js_to_json(raw))
 
 
-def _fetch_once(s: requests.Session, url: str) -> Note:
-    m = re.search(r"/(?:explore|discovery/item|item)/([0-9a-f]{24})", url)
+def _note_id(url: str) -> str:
+    m = _NOTE_ID_RE.search(url)
     if not m:
         raise ValueError(f"链接里找不到笔记 ID：{url}")
-    note_id = m.group(1)
+    return m.group(1)
+
+
+def _fetch_once(s: requests.Session, url: str) -> Note:
+    note_id = _note_id(url)
     r = s.get(url, timeout=PAGE_TIMEOUT, allow_redirects=True)
     if "/login" in r.url:
         raise NeedLogin("被跳转到登录页")
@@ -80,6 +97,35 @@ def _fetch_once(s: requests.Session, url: str) -> Note:
     note = (((state.get("note") or {}).get("noteDetailMap") or {}).get(note_id) or {}).get("note")
     if not note:
         raise NeedLogin("页面无笔记数据（游客不可见）")
+    return _note_from_dict(note)
+
+
+def _fetch_via_browser(url: str) -> Note:
+    """无头 Chromium 打开笔记页，页面 JS 自己生成游客 cookie，再读 __INITIAL_STATE__。"""
+    from playwright.sync_api import sync_playwright
+    note_id = _note_id(url)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            # 不要自定义 UA：指定桌面 Chrome UA 会被甩到 /login，Playwright 默认 UA 反而能过（2026-11-17 对照实测 3 次）
+            ctx = browser.new_context(viewport={"width": 1280, "height": 900})
+            page = ctx.new_page()
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+            except Exception as e:
+                print(f"[xhs browser goto] {e}")
+            page.wait_for_timeout(BROWSER_SETTLE_MS)
+            if "/login" in page.url:
+                raise NeedLogin("浏览器也被跳转到登录页")
+            note = page.evaluate(_JS_PICK_NOTE, note_id)
+        finally:
+            browser.close()
+    if not note:
+        raise NeedLogin("浏览器页面无笔记数据")
+    return _note_from_dict(note)
+
+
+def _note_from_dict(note: dict) -> Note:
     title = (note.get("title") or "").strip()
     desc = (note.get("desc") or "").strip()
     images = tuple(
@@ -104,18 +150,23 @@ def _fetch_once(s: requests.Session, url: str) -> Note:
 
 
 def fetch_note(url: str) -> Note:
-    """解析笔记。撞登录墙时换另一个域名再试一次（cookie 可能是另一边的）；仍不行抛 NeedLogin。"""
+    """解析笔记：requests（原域名 → 换域名）→ 无头浏览器。全部撞墙抛 NeedLogin（带最后一步的原因）。"""
     s = _session()
-    try:
-        return _fetch_once(s, url)
-    except NeedLogin as first:
-        alt = _swap_host(url)
-        if alt == url:
-            raise
+    candidates = [url]
+    alt = _swap_host(url)
+    if alt != url:
+        candidates.append(alt)
+    last: Exception = NeedLogin("未尝试")
+    for u in candidates:
         try:
-            return _fetch_once(s, alt)
-        except NeedLogin:
-            raise first
+            return _fetch_once(s, u)
+        except NeedLogin as e:
+            last = e
+    print(f"[xhs] requests 撞登录墙（{last}），改用无头浏览器")
+    try:
+        return _fetch_via_browser(url)
+    except ImportError:
+        raise NeedLogin(f"{last}；且本机没装 Playwright，无法用浏览器兜底")
 
 
 def download_stream(video_url: str, dest: str) -> bool:

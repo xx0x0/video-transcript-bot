@@ -1308,8 +1308,8 @@ def _download_photos_as_jpeg(images) -> list:
 
 
 async def _handle_xiaohongshu(msg, clean_url: str, video_path: str):
-    """小红书 / rednote：解析分享页内嵌数据。视频帖下 CDN 直链返回 (True, 标题)；
-    图文帖直接发相册返回 (False, 标题)；要登录的链接靠 XHS_COOKIES，没有就回提示。"""
+    """小红书 / rednote：解析分享页内嵌数据（requests → 无头浏览器，见 xiaohongshu.py）。
+    视频帖下 CDN 直链返回 (True, 标题)；图文帖直接发相册返回 (False, 标题)；拿不到数据回提示。"""
     loop = asyncio.get_event_loop()
     try:
         note = await loop.run_in_executor(None, xiaohongshu.fetch_note, clean_url)
@@ -1319,11 +1319,7 @@ async def _handle_xiaohongshu(msg, clean_url: str, video_path: str):
         dl = await _run_subprocess("yt-dlp", "--no-playlist", "-o", video_path, clean_url)
         if dl.returncode == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 0:
             return True, ""
-        if os.path.exists(xiaohongshu.XHS_COOKIES):
-            hint = f"cookie 可能已过期或域名不符，重新导出到 {xiaohongshu.XHS_COOKIES}"
-        else:
-            hint = f"未配置 cookie，把已登录浏览器的 cookie 导出为 {xiaohongshu.XHS_COOKIES}"
-        await msg.reply_text(f"❌ 小红书要求登录才能看这条（{hint}）\n🔗 {clean_url}")
+        await msg.reply_text(f"❌ 小红书拿不到这条笔记：{e}\n🔗 {clean_url}")
         return False, ""
     except Exception as e:
         print(f"[ERROR xhs] {e}")
