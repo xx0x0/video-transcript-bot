@@ -32,6 +32,7 @@ if [ ! -f "$APP_DIR/.env" ]; then
         -e "s#^SAVE_DIR=.*#SAVE_DIR=\"$APP_DIR/downloads\"#" \
         -e "s#^X_COOKIES=.*#X_COOKIES=\"$APP_DIR/x-cookies.txt\"#" \
         -e "s#^DOUYIN_COOKIES=.*#DOUYIN_COOKIES=\"$APP_DIR/douyin-cookies.txt\"#" \
+        -e "s#^XHS_COOKIES=.*#XHS_COOKIES=\"$APP_DIR/xhs-cookies.txt\"#" \
         -e 's#^ALLOWED_GROUP=.*#ALLOWED_GROUP=""#' \
         "$APP_DIR/.env"
     chmod 600 "$APP_DIR/.env"

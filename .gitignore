@@ -5,6 +5,7 @@ __pycache__/
 *.save
 *.log
 x-cookies.txt
+*-cookies.txt
 *.mp4
 *.wav
 *.session

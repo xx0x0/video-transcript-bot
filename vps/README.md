@@ -35,6 +35,7 @@ journalctl -u douyin-bot -f
 | 更新代码 | `cd /opt/douyin-bot && git pull && sudo systemctl restart douyin-bot` |
 | 已部署机器升级到截图版 | `git pull` 后 `sudo bash vps/install.sh`（会补装 Playwright/Chromium/字体并重写 service），再 `nano .env` 把 `ENABLE_SCREENSHOT` 改成 `"1"`，`sudo systemctl daemon-reload && sudo systemctl restart douyin-bot` |
 | 更新 yt-dlp | 每次重启自动升级；手动 `.venv/bin/pip install -U yt-dlp` |
+| 小红书/rednote 登录 cookie | 本机用「Get cookies.txt LOCALLY」在已登录的 rednote.com 导出，`scp xhs-cookies.txt root@VPS:/opt/douyin-bot/`，`.env` 里 `XHS_COOKIES="/opt/douyin-bot/xhs-cookies.txt"`（install.sh 新生成的 .env 已带），重启生效 |
 | 清理下载 | 原片不自动删，在 `SAVE_DIR`（默认 `/opt/douyin-bot/downloads`）；`find /opt/douyin-bot/downloads -type f -mtime +7 -delete` 可进 crontab |
 | 前台调试 | `sudo systemctl stop douyin-bot && ./run.sh`（run.sh 自动用 .venv） |
 

@@ -124,6 +124,9 @@ printf '# Netscape HTTP Cookie File\n.x.com\tTRUE\t/\tTRUE\t2147483647\tauth_tok
 
 > 在浏览器 F12 → Application → Cookies → x.com 里找 auth_token 和 ct0
 
+**小红书 / rednote（可选）：** App 分享出的 `xhslink.com` 链接不用 cookie；浏览器搜索流复制的链接（带 `xsec_source=pc_search`）游客看不了，需要登录 cookie。
+用 Chrome 扩展「Get cookies.txt LOCALLY」在已登录的 `www.rednote.com`（或 `www.xiaohongshu.com`）页面导出，存成 `~/xhs-cookies.txt`（VPS 放 `/opt/douyin-bot/xhs-cookies.txt`）。cookie 只对导出时的域名有效，bot 撞登录墙会自动换另一个域名再试一次。
+
 ### 7. 配置并启动
 
 复制配置模板并填入你自己的值：
@@ -181,7 +184,8 @@ python3 ~/douyin-bot/bot.py
 | Instagram | ✅ | ✅ | ✅ 需要 |
 | 微博 | ✅ | ✅ | ❌ |
 | 快手 | ✅ | ✅ | ❌ |
-| 小红书图文 | ❌ | ❌ | ✅ 需要 |
+| 小红书 / rednote 视频 | ✅ 分享页直链 | ✅ 标题+正文 | App 分享链接不用；`pc_search` 链接需要 `XHS_COOKIES` |
+| 小红书 / rednote 图文 | ✅ 相册 | ✅ 标题+正文 | 同上 |
 | 微信视频号 | ✅ 第三方上游（snapany API / anyfetcher） | ✅ 标题 | 可选 `SNAPANY_API_KEY` |
 
 ---
@@ -236,6 +240,9 @@ launchctl load ~/Library/LaunchAgents/com.douyin.bot.plist
 ---
 
 ## 📜 更新日志
+
+### 2026-11-17
+- 🆕 **小红书国际版 rednote.com + 图文帖 + 登录 cookie** — 新增 `xiaohongshu.py` 直接解析分享页内嵌数据（不再依赖 yt-dlp 的小红书提取器）：视频帖下 CDN 直链发视频+标题+链接，图文帖发相册+标题+正文；`www.rednote.com` 与 `www.xiaohongshu.com` 同样处理。浏览器搜索流复制的链接（`xsec_source=pc_search`）游客被甩登录页，配 `XHS_COOKIES`（默认 `~/xhs-cookies.txt`）后可解；没配回「要求登录」提示而不是截登录页
 
 ### 2026-11-01
 - 🔧 **VPS 截图全开** — `vps/install.sh` 改为装 Playwright + Chromium（放仓库内 `.pw-browsers/`）+ 中文字体，生成的 `.env` 里 `ENABLE_SCREENSHOT="1"`；bot.py 在没有 `DISPLAY` 的 Linux 上把 X 的有头浏览器兜底自动退回 headless。已部署机器：`git pull` → `sudo bash vps/install.sh` → `.env` 改 `ENABLE_SCREENSHOT="1"` → `daemon-reload` + restart

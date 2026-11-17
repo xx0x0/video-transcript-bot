@@ -2,6 +2,27 @@
 
 本文件记录 douyin-bot 的重要变更。日期格式 YYYY-MM-DD。
 
+## [2026-11-17] 小红书国际版 rednote.com：分享页解析 + 图文 + 登录 cookie
+
+**现象：** VPS 收到 `www.rednote.com/discovery/item/...?xsec_source=pc_search` 链接，回了一张 rednote 登录页截图。
+
+**原因：** `rednote.com` 不在 `PLATFORMS`，bot 当未知链接处理：yt-dlp 只认 `xiaohongshu.com` 探不到视频，于是走网页截图，截到登录墙。
+而且这条链接换成 `xiaohongshu.com` 域名也一样被甩到 `/login`：页面 `guestBrowsePolicy.sources` 只有 `["seo","direct"]`，
+浏览器搜索流复制的 `pc_search` token 游客看不了；10/31 实测能下的是 App 分享的 `xhslink` 短链（`app_share`）。
+用户用的 Chrome 扩展能提取是因为它在已登录的页面里读 DOM，bot 没有这个登录态。
+
+**改动：**
+- 新增 `xiaohongshu.py`：按用户发来的域名请求（不改写，cookie 绑域名），解析 `window.__INITIAL_STATE__` → `note.noteDetailMap[id].note`，
+  视频取 `video.media.stream.h264[].masterUrl`（退 h265/av1），图文取 `imageList[].urlDefault`；跳到 `/login` 或没有笔记数据抛 `NeedLogin`，
+  抛前换另一个域名再试一次。cookie 文件 `XHS_COOKIES`（Netscape 格式，默认 `~/xhs-cookies.txt`），`requests` 的 `MozillaCookieJar` 读。
+- bot.py：`PLATFORMS` / `VIDEO_ONLY` 加 `rednote.com`；`_process` 新增 `_handle_xiaohongshu` 分支（视频走 `download_stream` 直链；图文发相册，caption 标题+正文+链接）；
+  `NeedLogin` 时先用老路径 yt-dlp 兜底一次，仍失败回「要求登录」+ cookie 路径提示，不再截登录页；
+  图片下载+webp 转 JPEG 抽成 `_download_photos_as_jpeg`，抖音图文帖沿用。xhslink 短链展开也接受跳到 `rednote.com`。
+- `.env.example` 加 `XHS_COOKIES`；`vps/install.sh` 生成 .env 时指到 `/opt/douyin-bot/xhs-cookies.txt`；`.gitignore` 加 `*-cookies.txt`。
+
+**验证：** 本机（海外 IP，无 cookie）：登录页 HTML 离线解析通过；用户那条 rednote 链接和 yt-dlp 测试用例 `explore/6411cf99...` 都抛 `NeedLogin`（符合预期，游客不可见）。
+**未验证：** 带 cookie 的真实解析（视频/图文字段路径与 yt-dlp 提取器一致，但没有登录态没跑过），等用户导出 cookie 后在 VPS 实测。
+
 ## [2026-11-01] 视频号直链：finder.video.qq.com 地址直接下载
 
 **起因：** 用户不注册 snapany。snapany 网页人工用免费，但 bot 调它要过防脚本签名，不绕。

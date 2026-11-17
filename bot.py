@@ -62,7 +62,8 @@ except Exception as _e:
 
 PLATFORMS = [
     "douyin.com", "v.douyin.com", "tiktok.com", "xiaohongshu.com",
-    "xhslink.com", "twitter.com", "x.com", "youtube.com", "youtu.be",
+    "xhslink.com", "rednote.com",  # rednote = 小红书国际版，同一套页面（见 xiaohongshu.py）
+    "twitter.com", "x.com", "youtube.com", "youtu.be",
     "instagram.com", "weibo.com", "bilibili.com", "b23.tv", "kuaishou.com",
     "news.qq.com", "view.inews.qq.com", "bad.news", "github.com",
     "weixin.qq.com/sph", "channels.weixin.qq.com",  # 微信视频号（走第三方上游，见 weixin_channels.py）
@@ -70,12 +71,13 @@ PLATFORMS = [
 ]
 VIDEO_ONLY = (
     "youtube.com", "youtu.be", "bilibili.com", "b23.tv",
-    "instagram.com", "kuaishou.com", "xiaohongshu.com", "xhslink.com",
+    "instagram.com", "kuaishou.com", "xiaohongshu.com", "xhslink.com", "rednote.com",
 )
 
 # 抖音解析：移动端 feed API 已不认 aweme_id（2026-10-31 实测返回随机推荐流），改抓 iesdouyin 分享页内嵌数据
 import douyin as douyin_api
 import weixin_channels
+import xiaohongshu
 
 # X 已删光 data-testid（2026-08 实测），旧的按 testid 隐藏弹窗的 CSS 失配；
 # 改按 fixed/sticky 定位 + 关键词清除 cookie 同意弹窗、登录/注册悬浮条。
@@ -630,7 +632,7 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             r = requests.get(text, allow_redirects=False, timeout=10, stream=True)
             loc = r.headers.get("Location", "")
             r.close()
-            if "xiaohongshu.com" in loc:
+            if "xiaohongshu.com" in loc or "rednote.com" in loc:
                 clean_url = loc
         except Exception:
             pass
@@ -1285,8 +1287,68 @@ def douyin_note_gallery(url):
     return title, urls
 
 
+def _download_photos_as_jpeg(images) -> list:
+    """按顺序下载图片，webp 转 JPEG（Telegram 相册只收 JPEG）。单张失败跳过。"""
+    photo_data = []
+    for img_url in images:
+        try:
+            r = requests.get(img_url, timeout=30,
+                             headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)"})
+            if r.status_code == 200:
+                content = r.content
+                if "webp" in (r.headers.get("content-type") or "") or ".webp" in img_url:
+                    from io import BytesIO
+                    buf = BytesIO()
+                    Image.open(BytesIO(content)).convert("RGB").save(buf, "JPEG", quality=90)
+                    content = buf.getvalue()
+                photo_data.append(content)
+        except Exception as img_e:
+            print(f"[图片下载失败] {img_url}: {img_e}")
+    return photo_data
+
+
+async def _handle_xiaohongshu(msg, clean_url: str, video_path: str):
+    """小红书 / rednote：解析分享页内嵌数据。视频帖下 CDN 直链返回 (True, 标题)；
+    图文帖直接发相册返回 (False, 标题)；要登录的链接靠 XHS_COOKIES，没有就回提示。"""
+    loop = asyncio.get_event_loop()
+    try:
+        note = await loop.run_in_executor(None, xiaohongshu.fetch_note, clean_url)
+    except xiaohongshu.NeedLogin as e:
+        print(f"[xhs need login] {e}")
+        # 老路径兜底：App 分享的 xiaohongshu.com 链接 yt-dlp 不登录也能下（2026-10-31 实测）
+        dl = await _run_subprocess("yt-dlp", "--no-playlist", "-o", video_path, clean_url)
+        if dl.returncode == 0 and os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+            return True, ""
+        if os.path.exists(xiaohongshu.XHS_COOKIES):
+            hint = f"cookie 可能已过期或域名不符，重新导出到 {xiaohongshu.XHS_COOKIES}"
+        else:
+            hint = f"未配置 cookie，把已登录浏览器的 cookie 导出为 {xiaohongshu.XHS_COOKIES}"
+        await msg.reply_text(f"❌ 小红书要求登录才能看这条（{hint}）\n🔗 {clean_url}")
+        return False, ""
+    except Exception as e:
+        print(f"[ERROR xhs] {e}")
+        await msg.reply_text(f"❌ 小红书解析失败：{e}\n🔗 {clean_url}")
+        return False, ""
+
+    if note.kind == "images":
+        photo_data = await asyncio.to_thread(_download_photos_as_jpeg, note.images)
+        if not photo_data:
+            await msg.reply_text(f"❌ 未能下载到图片\n🔗 {clean_url}")
+            return False, note.title
+        caption = "\n\n".join(p for p in (note.title, note.desc) if p)
+        caption = (caption + "\n\n" if caption else "") + f"🔗 {clean_url}"
+        await _send_photo_bytes(msg, photo_data, caption[:1024])
+        return False, note.title
+
+    ok = await asyncio.to_thread(xiaohongshu.download_stream, note.video_url, video_path)
+    if not ok:
+        await msg.reply_text(f"❌ 小红书视频下载失败\n🔗 {clean_url}")
+        return False, note.title
+    return True, note.title
+
+
 async def _handle_xiaohongshu_note(msg, clean_url: str):
-    """小红书图文帖处理"""
+    """抖音图文帖处理（函数名沿用历史，实际走 douyin_api；小红书见 _handle_xiaohongshu）"""
     await msg.reply_text("⏳ 处理中，请稍候...")
     item = None
     for _attempt in range(3):
@@ -1318,22 +1380,7 @@ async def _handle_xiaohongshu_note(msg, clean_url: str):
             await msg.reply_text(f"❌ 未能提取到图片，请手动保存\n🔗 {clean_url}")
             return
         caption_text = (f"{title}\n\n" if title else "") + f"🔗 {clean_url}"
-        photo_data = []
-        for img_url in images:
-            try:
-                r = requests.get(img_url, timeout=30,
-                                 headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)"})
-                if r.status_code == 200:
-                    content = r.content
-                    # 兜底抓到的是 webp，Telegram 图片相册要 JPEG
-                    if "webp" in (r.headers.get("content-type") or "") or ".webp" in img_url:
-                        from io import BytesIO
-                        buf = BytesIO()
-                        Image.open(BytesIO(content)).convert("RGB").save(buf, "JPEG", quality=90)
-                        content = buf.getvalue()
-                    photo_data.append(content)
-            except Exception as img_e:
-                print(f"[图片下载失败] {img_url}: {img_e}")
+        photo_data = await asyncio.to_thread(_download_photos_as_jpeg, images)
         if not photo_data:
             await msg.reply_text(f"❌ 未能下载到图片\n🔗 {clean_url}")
             return
@@ -1532,9 +1579,15 @@ async def _process(msg, clean_url: str, mode: str = "default"):
     is_badnews = "bad.news" in clean_url
     is_qqnews = any(x in clean_url for x in ["news.qq.com", "view.inews.qq.com"])
     is_wx_channels = weixin_channels.is_channels_url(clean_url)
+    is_xhs = xiaohongshu.is_xhs_url(clean_url)
 
     if is_wx_channels:
         ok, title = await _handle_weixin_channels(msg, clean_url, video_path)
+        if not ok:
+            return
+
+    elif is_xhs:
+        ok, title = await _handle_xiaohongshu(msg, clean_url, video_path)
         if not ok:
             return
 
